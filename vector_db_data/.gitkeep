@@ -1,0 +1,2 @@
+# This file ensures the directory is tracked by Git.
+# Vector database files (e.g., for ChromaDB) will be stored here.
