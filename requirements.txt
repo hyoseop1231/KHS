@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-multipart # For file uploads
+jinja2 # For HTML templates
+PyMuPDF # For PDF processing
+pytesseract # For OCR
+Pillow # Pytesseract dependency for image manipulation
+sentence-transformers # For text embeddings
+langchain # For text splitting and other LLM utilities
+chromadb # For vector database
+requests # For HTTP requests to Ollama API
