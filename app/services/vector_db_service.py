@@ -1,39 +1,33 @@
 import chromadb
 import os
 from typing import List, Dict, Any
+from app.config import settings
+from app.utils.logging_config import get_logger
+from app.utils.exceptions import VectorDBError
 
-# ChromaDB 클라이언트 설정
-# 데이터를 영구 저장하기 위해 PersistentClient를 사용합니다.
-# 저장 경로는 프로젝트 루트의 vector_db_data 디렉토리입니다.
-CHROMA_DATA_PATH = "vector_db_data"
-COLLECTION_NAME = "pdf_documents_collection"
+logger = get_logger(__name__)
 
 # ChromaDB 클라이언트 초기화
-# 이 클라이언트는 서비스 모듈이 로드될 때 생성됩니다.
 try:
-    client = chromadb.PersistentClient(path=CHROMA_DATA_PATH)
+    client = chromadb.PersistentClient(path=settings.CHROMA_DATA_PATH)
+    logger.info(f"ChromaDB client initialized at: {settings.CHROMA_DATA_PATH}")
 except Exception as e:
-    print(f"Error initializing ChromaDB PersistentClient at '{CHROMA_DATA_PATH}': {e}")
-    print("Please ensure the directory is writable and chromadb is installed correctly.")
+    logger.error(f"Error initializing ChromaDB PersistentClient at '{settings.CHROMA_DATA_PATH}': {e}")
     client = None
 
 # 컬렉션 가져오기 또는 생성
-# 컬렉션은 문서와 임베딩을 저장하는 공간입니다.
 try:
     if client:
         collection = client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            # metadata={"hnsw:space": "cosine"} # 유사도 측정 방식 (기본값은 L2, 코사인 유사도가 텍스트에 더 적합할 수 있음)
-            # ChromaDB 최신 버전에서는 get_or_create_collection 시 embedding_function을 명시하거나,
-            # add 할 때 embeddings를 직접 제공해야 합니다. 우리는 후자를 사용합니다.
+            name=settings.COLLECTION_NAME,
         )
-        print(f"ChromaDB collection '{COLLECTION_NAME}' loaded/created successfully at '{CHROMA_DATA_PATH}'.")
+        logger.info(f"ChromaDB collection '{settings.COLLECTION_NAME}' loaded/created successfully")
     else:
         collection = None
-        print("ChromaDB client is not available. Collection cannot be loaded/created.")
+        logger.error("ChromaDB client is not available. Collection cannot be loaded/created.")
 except Exception as e:
     collection = None
-    print(f"Error getting or creating ChromaDB collection '{COLLECTION_NAME}': {e}")
+    logger.error(f"Error getting or creating ChromaDB collection '{settings.COLLECTION_NAME}': {e}")
 
 
 def store_vectors(document_id: str, text_chunks: List[str], vectors: List[List[float]], metadatas: List[Dict[str, Any]] = None):
@@ -49,20 +43,20 @@ def store_vectors(document_id: str, text_chunks: List[str], vectors: List[List[f
                                                     Defaults to None, in which case basic metadata is generated.
     """
     if not collection:
-        print("Error: ChromaDB collection is not available. Cannot store vectors.")
-        return
+        logger.error("ChromaDB collection is not available. Cannot store vectors.")
+        raise VectorDBError("ChromaDB collection not available", "COLLECTION_UNAVAILABLE")
 
     if not text_chunks or not vectors:
-        print("Error: Text chunks or vectors are empty. Nothing to store.")
-        return
+        logger.error("Text chunks or vectors are empty. Nothing to store.")
+        raise VectorDBError("Empty text chunks or vectors", "EMPTY_INPUT")
 
     if len(text_chunks) != len(vectors):
-        print("Error: The number of text chunks and vectors must be the same.")
-        return
+        logger.error(f"Mismatch: {len(text_chunks)} text chunks vs {len(vectors)} vectors")
+        raise VectorDBError("Text chunks and vectors count mismatch", "COUNT_MISMATCH")
 
     if metadatas and len(text_chunks) != len(metadatas):
-        print("Error: If metadatas are provided, their count must match text_chunks and vectors.")
-        return
+        logger.error(f"Metadata count mismatch: {len(metadatas)} vs {len(text_chunks)}")
+        raise VectorDBError("Metadata count mismatch", "METADATA_MISMATCH")
 
     ids = []
     generated_metadatas = []
@@ -89,9 +83,10 @@ def store_vectors(document_id: str, text_chunks: List[str], vectors: List[List[f
             metadatas=generated_metadatas,
             ids=ids
         )
-        print(f"Vector DB: Stored {len(vectors)} vectors for document '{document_id}' in collection '{COLLECTION_NAME}'.")
+        logger.info(f"Stored {len(vectors)} vectors for document '{document_id}' in collection '{settings.COLLECTION_NAME}'")
     except Exception as e:
-        print(f"Error storing vectors in ChromaDB for document '{document_id}': {e}")
+        logger.error(f"Error storing vectors in ChromaDB for document '{document_id}': {e}")
+        raise VectorDBError(f"Failed to store vectors: {e}", "STORE_ERROR")
 
 
 def search_similar_vectors(query_vector: List[float], top_k: int = 5, filter_metadata: Dict[str, Any] = None) -> List[Dict[str, Any]]:
@@ -110,22 +105,22 @@ def search_similar_vectors(query_vector: List[float], top_k: int = 5, filter_met
                               'id', 'text' (document content), 'metadata', and 'distance' (or 'score').
     """
     if not collection:
-        print("Error: ChromaDB collection is not available. Cannot search vectors.")
-        return []
+        logger.error("ChromaDB collection is not available. Cannot search vectors.")
+        raise VectorDBError("ChromaDB collection not available", "COLLECTION_UNAVAILABLE")
 
     if not query_vector:
-        print("Error: Query vector is empty. Cannot perform search.")
-        return []
+        logger.error("Query vector is empty. Cannot perform search.")
+        raise VectorDBError("Empty query vector", "EMPTY_QUERY_VECTOR")
 
     try:
-        print(f"Vector DB: Searching for {top_k} similar vectors in '{COLLECTION_NAME}'.")
+        logger.debug(f"Searching for {top_k} similar vectors in '{settings.COLLECTION_NAME}'")
         if filter_metadata:
-            print(f"Applying metadata filter: {filter_metadata}")
+            logger.debug(f"Applying metadata filter: {filter_metadata}")
 
         results = collection.query(
             query_embeddings=[query_vector], # query_embeddings는 리스트의 리스트 형태여야 함
             n_results=top_k,
-            where=filter_metadata, # 메타데이터 필터링 조건
+            where=filter_metadata if filter_metadata else None, # 메타데이터 필터링 조건 (빈 dict이면 None)
             include=['documents', 'metadatas', 'distances'] # 반환할 정보: 원본 텍스트, 메타데이터, 거리
         )
 
@@ -148,15 +143,159 @@ def search_similar_vectors(query_vector: List[float], top_k: int = 5, filter_met
                     "metadata": metadatas[i],
                     "distance": distances[i] # 거리가 짧을수록 유사함
                 })
-            print(f"Vector DB: Found {len(formatted_results)} results.")
+            logger.debug(f"Found {len(formatted_results)} search results")
         else:
-            print("Vector DB: No results found or empty result set.")
+            logger.debug("No results found or empty result set")
 
         return formatted_results
 
     except Exception as e:
-        print(f"Error searching vectors in ChromaDB: {e}")
-        return []
+        logger.error(f"Error searching vectors in ChromaDB: {e}")
+        raise VectorDBError(f"Search failed: {e}", "SEARCH_ERROR")
+
+def get_all_documents() -> List[Dict[str, Any]]:
+    """
+    ChromaDB에 저장된 모든 문서(document_id, 파일명 등) 목록을 반환합니다.
+    각 문서는 source_document_id 기준으로 그룹화되며, 미리보기 텍스트와 청크 개수 등도 포함할 수 있습니다.
+    """
+    if not collection:
+        logger.error("ChromaDB collection is not available. Cannot get documents.")
+        raise VectorDBError("ChromaDB collection not available", "COLLECTION_UNAVAILABLE")
+    
+    try:
+        # 모든 메타데이터만 쿼리 (최대 10000개 제한)
+        results = collection.get(include=["metadatas"], limit=10000)
+        metadatas = results.get("metadatas", [])
+        # source_document_id별로 그룹화
+        doc_map = {}
+        for meta in metadatas:
+            doc_id = meta.get("source_document_id")
+            if not doc_id:
+                continue
+            if doc_id not in doc_map:
+                doc_map[doc_id] = {
+                    "document_id": doc_id,
+                    "chunk_count": 0,
+                    "first_chunk_preview": meta.get("original_text_preview", "")
+                }
+            doc_map[doc_id]["chunk_count"] += 1
+        logger.info(f"Retrieved {len(doc_map)} unique documents from ChromaDB")
+        return list(doc_map.values())
+    except Exception as e:
+        logger.error(f"Error getting all documents from ChromaDB: {e}")
+        raise VectorDBError(f"Failed to get documents: {e}", "GET_DOCUMENTS_ERROR")
+
+def delete_document(document_id: str) -> bool:
+    """
+    특정 문서 ID에 해당하는 모든 벡터와 청크를 삭제합니다.
+    
+    Args:
+        document_id (str): 삭제할 문서의 ID
+        
+    Returns:
+        bool: 삭제 성공 여부
+    """
+    if not collection:
+        logger.error("ChromaDB collection is not available. Cannot delete document.")
+        raise VectorDBError("ChromaDB collection not available", "COLLECTION_UNAVAILABLE")
+    
+    if not document_id:
+        logger.error("Document ID is empty")
+        raise VectorDBError("Empty document ID", "EMPTY_DOCUMENT_ID")
+    
+    try:
+        # 해당 문서의 모든 청크 ID 조회
+        results = collection.get(
+            where={"source_document_id": document_id},
+            include=["documents"]
+        )
+        
+        chunk_ids = results.get("ids", [])
+        if not chunk_ids:
+            logger.warning(f"No chunks found for document: {document_id}")
+            return False
+        
+        # 모든 청크 삭제
+        collection.delete(ids=chunk_ids)
+        
+        logger.info(f"Deleted {len(chunk_ids)} chunks for document: {document_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error deleting document {document_id} from ChromaDB: {e}")
+        raise VectorDBError(f"Failed to delete document: {e}", "DELETE_ERROR")
+
+def delete_all_documents() -> int:
+    """
+    모든 문서와 벡터를 삭제합니다.
+    
+    Returns:
+        int: 삭제된 문서의 개수
+    """
+    if not collection:
+        logger.error("ChromaDB collection is not available. Cannot delete documents.")
+        raise VectorDBError("ChromaDB collection not available", "COLLECTION_UNAVAILABLE")
+    
+    try:
+        # 모든 문서 조회
+        results = collection.get(include=["documents"])
+        all_ids = results.get("ids", [])
+        
+        if not all_ids:
+            logger.info("No documents to delete")
+            return 0
+        
+        # 모든 문서 삭제
+        collection.delete(ids=all_ids)
+        
+        # 문서 ID별로 그룹화하여 개수 계산
+        metadatas = results.get("metadatas", [])
+        document_ids = set()
+        for meta in metadatas:
+            if meta and "source_document_id" in meta:
+                document_ids.add(meta["source_document_id"])
+        
+        deleted_count = len(document_ids)
+        logger.info(f"Deleted all documents from ChromaDB. Total documents: {deleted_count}, Total chunks: {len(all_ids)}")
+        return deleted_count
+        
+    except Exception as e:
+        logger.error(f"Error deleting all documents from ChromaDB: {e}")
+        raise VectorDBError(f"Failed to delete all documents: {e}", "DELETE_ALL_ERROR")
+
+def get_document_info(document_id: str) -> dict:
+    """
+    특정 문서의 상세 정보를 반환합니다.
+    
+    Args:
+        document_id (str): 조회할 문서의 ID
+        
+    Returns:
+        dict: 문서 정보 (chunk_count, first_chunk_preview 등)
+    """
+    if not collection:
+        logger.error("ChromaDB collection is not available")
+        raise VectorDBError("ChromaDB collection not available", "COLLECTION_UNAVAILABLE")
+    
+    try:
+        results = collection.get(
+            where={"source_document_id": document_id},
+            include=["metadatas"]
+        )
+        
+        metadatas = results.get("metadatas", [])
+        if not metadatas:
+            return None
+        
+        return {
+            "document_id": document_id,
+            "chunk_count": len(metadatas),
+            "first_chunk_preview": metadatas[0].get("original_text_preview", "") if metadatas else ""
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting document info for {document_id}: {e}")
+        raise VectorDBError(f"Failed to get document info: {e}", "GET_INFO_ERROR")
 
 if __name__ == '__main__':
     # 간단한 테스트용

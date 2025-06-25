@@ -3,12 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ title }}</title>
+    <title>주물기술총서 기반 RAG 챗봇</title>
     <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>OCR 기반 RAG 챗봇</h1>
+        <h1>주물기술총서 기반 RAG 챗봇</h1>
+
+        <div class="ollama-section">
+            <h2>Ollama 상태 및 모델 선택</h2>
+            <div id="ollama-status">Ollama 상태: 확인 중...</div>
+            <label for="ollama-models">사용할 모델 선택:</label>
+            <select id="ollama-models"></select>
+        </div>
 
         <div class="upload-section">
             <h2>PDF 파일 업로드</h2>
@@ -18,15 +25,69 @@
                 <button type="submit">업로드 및 처리</button>
             </form>
             <div id="upload-status" class="status-message"></div>
+            <div id="progress-container" style="display:none; margin-top:10px;">
+                <div id="progress-bar" style="height:20px; background:#e0e0e0; border-radius:10px; overflow:hidden;">
+                    <div id="progress-bar-inner" style="height:100%; width:0%; background:#007bff; transition:width 0.3s;"></div>
+                </div>
+                <div id="progress-message" style="margin-top:8px; text-align:center;"></div>
+            </div>
+        </div>
+
+        <div class="document-management-section">
+            <h2>문서 관리</h2>
+            <div style="margin-bottom:15px;">
+                <button id="refresh-documents" style="margin-right:10px;">문서 목록 새로고침</button>
+                <button id="storage-stats" style="margin-right:10px;">저장소 통계</button>
+                <button id="cleanup-files" style="margin-right:10px;">고아 파일 정리</button>
+                <button id="delete-all-documents" style="background:#dc3545; color:white;">모든 문서 삭제</button>
+            </div>
+            
+            <div id="document-list" style="max-height:200px; overflow-y:auto; border:1px solid #ddd; padding:10px; margin-bottom:15px;">
+                <!-- 문서 목록이 여기에 표시됩니다 -->
+            </div>
+            
+            <div id="management-status" class="status-message"></div>
         </div>
 
         <div class="chat-section">
             <h2>챗봇과 대화하기</h2>
+            <div style="margin-bottom:10px;">
+                <label for="document-select">문서 선택 (여러 개 선택 가능):</label>
+                <select id="document-select" multiple size="4" style="min-width:220px;"></select>
+                <span id="document-info" style="font-size:0.95em; color:#666; margin-left:8px;"></span>
+                <div style="font-size:0.92em; color:#888; margin-top:4px;">Ctrl(또는 ⌘)을 누른 채 여러 문서를 선택하거나, '전체 문서'를 선택하면 모든 문서에서 검색합니다.</div>
+            </div>
+            
+            <!-- Chat Progress Indicator -->
+            <div id="chat-progress" class="chat-progress">
+                <div class="chat-progress-steps">
+                    <div class="progress-step" data-step="query">
+                        <div class="progress-step-icon" data-step="1"></div>
+                        <span>질문 분석</span>
+                    </div>
+                    <div class="progress-step" data-step="embedding">
+                        <div class="progress-step-icon" data-step="2"></div>
+                        <span>임베딩 생성</span>
+                    </div>
+                    <div class="progress-step" data-step="search">
+                        <div class="progress-step-icon" data-step="3"></div>
+                        <span>문서 검색</span>
+                    </div>
+                    <div class="progress-step" data-step="generate">
+                        <div class="progress-step-icon" data-step="4"></div>
+                        <span>답변 생성</span>
+                    </div>
+                </div>
+                <div class="progress-message" id="chat-progress-message">답변을 생성하고 있습니다...</div>
+            </div>
+            
             <div id="chat-history">
                 <!-- 채팅 메시지가 여기에 표시됩니다 -->
             </div>
-            <input type="text" id="chat-input" placeholder="질문을 입력하세요...">
-            <button id="send-button">전송</button>
+            <div class="chat-input-container">
+                <input type="text" id="chat-input" placeholder="질문을 입력하세요...">
+                <button id="send-button" class="btn btn-primary">💬 전송</button>
+            </div>
             <div id="chat-status" class="status-message"></div>
         </div>
     </div>
@@ -55,6 +116,13 @@
                 const result = await response.json();
                 if (response.ok) {
                     uploadStatus.textContent = `성공: ${result.message || result.filename}`;
+                    if(result.document_id) {
+                        startProgressPolling(result.document_id);
+                        // 문서 목록 새로고침
+                        setTimeout(() => {
+                            fetchDocumentList();
+                        }, 2000);
+                    }
                 } else {
                     uploadStatus.textContent = `오류: ${result.error || '알 수 없는 오류'}`;
                 }
@@ -69,7 +137,13 @@
 
             appendMessage('user', query);
             chatInput.value = '';
-            chatStatus.textContent = '답변을 기다리는 중...';
+            
+            // Show progress indicator
+            showChatProgress();
+            
+            // Disable send button
+            sendButton.disabled = true;
+            sendButton.innerHTML = '<span class="loading-spinner"></span>생성 중...';
 
             try {
                 const response = await fetch('/api/chat/', {
@@ -77,19 +151,46 @@
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ query: query }),
+                    body: JSON.stringify({ query: query, model_name: getSelectedModel(), document_ids: getSelectedDocumentIds() }),
                 });
                 const result = await response.json();
                 if (response.ok) {
-                    appendMessage('bot', result.response);
-                    chatStatus.textContent = '';
+                    // 멀티모달 컨텐트가 있는 경우 이미지와 표도 표시
+                    if (result.media_references && result.media_references.has_media) {
+                        appendMultimodalMessage('bot', result);
+                    } else {
+                        appendMessage('bot', result.response, true);
+                    }
+                    
+                    chatStatus.className = 'status-message status-success';
+                    
+                    // 사용된 컨텐트 요약 표시
+                    const summary = result.content_summary;
+                    if (summary) {
+                        const summaryText = `텍스트: ${summary.text_chunks || 0}개, 이미지: ${summary.images || 0}개, 표: ${summary.tables || 0}개`;
+                        chatStatus.textContent = `✅ 답변 생성 완료 (${summaryText})`;
+                    } else {
+                        chatStatus.textContent = '✅ 답변이 생성되었습니다.';
+                    }
+                    
+                    setTimeout(() => {
+                        chatStatus.textContent = '';
+                        chatStatus.className = 'status-message';
+                    }, 5000);
                 } else {
-                    appendMessage('bot', `오류: ${result.detail || '챗봇 응답 오류'}`);
-                    chatStatus.textContent = `오류: ${result.detail || '챗봇 응답 오류'}`;
+                    appendMessage('bot', `❌ 오류: ${result.detail || '챗봇 응답 오류'}`);
+                    chatStatus.className = 'status-message status-error';
+                    chatStatus.textContent = `❌ 오류: ${result.detail || '챗봇 응답 오류'}`;
                 }
             } catch (error) {
-                appendMessage('bot', `네트워크 오류: ${error.message}`);
-                chatStatus.textContent = `네트워크 오류: ${error.message}`;
+                appendMessage('bot', `❌ 네트워크 오류: ${error.message}`);
+                chatStatus.className = 'status-message status-error';
+                chatStatus.textContent = `❌ 네트워크 오류: ${error.message}`;
+            } finally {
+                // Hide progress indicator and re-enable button
+                hideChatProgress();
+                sendButton.disabled = false;
+                sendButton.innerHTML = '💬 전송';
             }
         }
 
@@ -100,14 +201,540 @@
             }
         });
 
-        function appendMessage(sender, text) {
+        function appendMessage(sender, text, isMarkdown=false) {
             const messageDiv = document.createElement('div');
             messageDiv.classList.add('message');
             messageDiv.classList.add(sender === 'user' ? 'user-message' : 'bot-message');
-            messageDiv.textContent = text;
+            if(isMarkdown && window.marked) {
+                messageDiv.innerHTML = window.marked.parse(text);
+            } else {
+                messageDiv.textContent = text;
+            }
             chatHistory.appendChild(messageDiv);
             chatHistory.scrollTop = chatHistory.scrollHeight; // Scroll to bottom
         }
+        
+        function appendMultimodalMessage(sender, result) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', 'bot-message', 'multimodal-message');
+            
+            // 메인 답변 텍스트
+            const responseDiv = document.createElement('div');
+            responseDiv.classList.add('response-text');
+            if (window.marked) {
+                responseDiv.innerHTML = window.marked.parse(result.response);
+            } else {
+                responseDiv.textContent = result.response;
+            }
+            messageDiv.appendChild(responseDiv);
+            
+            // 미디어 컨텐트 추가
+            if (result.media_references && result.media_references.has_media) {
+                const mediaDiv = document.createElement('div');
+                mediaDiv.classList.add('media-content');
+                
+                // 이미지 표시 기능 임시 비활성화
+                // Image display functionality temporarily disabled
+                
+                // 참조된 표 표시
+                if (result.media_references.tables && result.media_references.tables.length > 0) {
+                    const tablesSection = document.createElement('div');
+                    tablesSection.classList.add('referenced-tables');
+                    tablesSection.innerHTML = '<h4>📊 참조된 표</h4>';
+                    
+                    result.media_references.tables.forEach((table, tableIndex) => {
+                        const tableContainer = document.createElement('div');
+                        tableContainer.classList.add('table-reference');
+                        tableContainer.setAttribute('data-table-number', tableIndex + 1);
+                        
+                        let tableHtml = `
+                            <div class="table-info">
+                                <span class="media-number">[표${tableIndex + 1}]</span>
+                                <strong>📄 ${table.filename}</strong> (페이지 ${table.page})
+                                <small>출처: ${table.source}</small>
+                            </div>
+                        `;
+                        
+                        // 표 데이터가 있으면 표시
+                        if (table.parsed_data && table.parsed_data.length > 0) {
+                            const tableId = `table-${tableIndex}-${Date.now()}`;
+                            tableHtml += `
+                                <div class="table-data">
+                                    <div class="table-controls">
+                                        <button class="btn-small" onclick="toggleTableExpand('${tableId}')">전체 보기</button>
+                                        <span class="table-size-info">${table.parsed_data.length}행 표</span>
+                                    </div>
+                                    <table id="${tableId}" class="data-table collapsed">
+                            `;
+                            
+                            // 처음에는 5행만 표시
+                            const maxRows = 5;
+                            for (let i = 0; i < Math.min(maxRows, table.parsed_data.length); i++) {
+                                const row = table.parsed_data[i];
+                                if (Array.isArray(row) && row.length > 0) {
+                                    tableHtml += '<tr class="visible-row">';
+                                    row.forEach((cell, cellIndex) => {
+                                        const tag = i === 0 ? 'th' : 'td';
+                                        const cellContent = String(cell).length > 50 ? 
+                                            String(cell).substring(0, 50) + '...' : cell;
+                                        tableHtml += `<${tag} title="${String(cell).replace(/"/g, '&quot;')}">${cellContent}</${tag}>`;
+                                    });
+                                    tableHtml += '</tr>';
+                                }
+                            }
+                            
+                            // 나머지 행들 (처음에는 숨김)
+                            for (let i = maxRows; i < table.parsed_data.length; i++) {
+                                const row = table.parsed_data[i];
+                                if (Array.isArray(row) && row.length > 0) {
+                                    tableHtml += '<tr class="hidden-row" style="display: none;">';
+                                    row.forEach((cell, cellIndex) => {
+                                        const cellContent = String(cell).length > 50 ? 
+                                            String(cell).substring(0, 50) + '...' : cell;
+                                        tableHtml += `<td title="${String(cell).replace(/"/g, '&quot;')}">${cellContent}</td>`;
+                                    });
+                                    tableHtml += '</tr>';
+                                }
+                            }
+                            
+                            if (table.parsed_data.length > maxRows) {
+                                tableHtml += `<tr class="table-expand-indicator"><td colspan="100%" class="table-more">... +${table.parsed_data.length - maxRows}행 더 보기</td></tr>`;
+                            }
+                            
+                            tableHtml += '</table></div>';
+                        } else if (table.content) {
+                            // 파싱된 데이터가 없으면 원본 컨텐트 표시
+                            tableHtml += `
+                                <div class="table-raw-content">
+                                    <pre>${table.content}</pre>
+                                </div>
+                            `;
+                        }
+                        
+                        // 표 이미지가 있다면 추가
+                        if (table.path) {
+                            const tableImageUrl = `/${table.path}`;
+                            tableHtml += `
+                                <div class="table-image-preview">
+                                    <p><strong>표 이미지:</strong></p>
+                                    <img src="${tableImageUrl}" alt="Table from ${table.filename}" class="preview-table-image" 
+                                         onclick="openImageModal('${tableImageUrl}', 'Table from ${table.filename}')" 
+                                         onerror="this.style.display='none'">
+                                </div>
+                            `;
+                        }
+                        
+                        tableContainer.innerHTML = tableHtml;
+                        tablesSection.appendChild(tableContainer);
+                    });
+                    
+                    mediaDiv.appendChild(tablesSection);
+                }
+                
+                messageDiv.appendChild(mediaDiv);
+            }
+            
+            chatHistory.appendChild(messageDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        // Chat progress functions
+        function showChatProgress() {
+            const progressEl = document.getElementById('chat-progress');
+            const progressMessage = document.getElementById('chat-progress-message');
+            const steps = ['query', 'embedding', 'search', 'generate'];
+            
+            progressEl.classList.add('active');
+            
+            // Reset all steps
+            document.querySelectorAll('.progress-step').forEach(step => {
+                step.classList.remove('active', 'completed');
+            });
+            
+            // Simulate progress steps
+            let currentStep = 0;
+            const stepInterval = setInterval(() => {
+                if (currentStep > 0) {
+                    const prevStep = document.querySelector(`[data-step="${steps[currentStep-1]}"]`);
+                    prevStep.classList.remove('active');
+                    prevStep.classList.add('completed');
+                }
+                
+                if (currentStep < steps.length) {
+                    const currentStepEl = document.querySelector(`[data-step="${steps[currentStep]}"]`);
+                    currentStepEl.classList.add('active');
+                    
+                    const messages = {
+                        'query': '질문을 분석하고 있습니다...',
+                        'embedding': '질문을 벡터로 변환하고 있습니다...',
+                        'search': '관련 문서를 검색하고 있습니다...',
+                        'generate': 'AI가 답변을 생성하고 있습니다...'
+                    };
+                    
+                    progressMessage.textContent = messages[steps[currentStep]];
+                    currentStep++;
+                } else {
+                    clearInterval(stepInterval);
+                }
+            }, 800);
+            
+            // Store interval for cleanup
+            progressEl.stepInterval = stepInterval;
+        }
+        
+        function hideChatProgress() {
+            const progressEl = document.getElementById('chat-progress');
+            
+            // Clear interval if running
+            if (progressEl.stepInterval) {
+                clearInterval(progressEl.stepInterval);
+            }
+            
+            // Mark all steps as completed
+            document.querySelectorAll('.progress-step').forEach(step => {
+                step.classList.remove('active');
+                step.classList.add('completed');
+            });
+            
+            // Hide after a brief delay
+            setTimeout(() => {
+                progressEl.classList.remove('active');
+            }, 1000);
+        }
+
+        // Ollama 상태 및 모델 목록 불러오기
+        async function fetchOllamaStatusAndModels() {
+            const statusEl = document.getElementById('ollama-status');
+            // 상태
+            try {
+                const res = await fetch('/api/ollama/status');
+                const data = await res.json();
+                const status = data.status === 'running' ? '✅ 실행 중' : (data.status === 'not running' ? '❌ 중지됨' : '❓ ' + data.status);
+                statusEl.textContent = 'Ollama 상태: ' + status;
+                statusEl.className = 'status-display ' + (data.status === 'running' ? 'status-running' : 'status-stopped');
+            } catch (e) {
+                statusEl.textContent = 'Ollama 상태: ❌ 확인 실패';
+                statusEl.className = 'status-display status-stopped';
+            }
+            // 모델 목록
+            try {
+                const res = await fetch('/api/ollama/models');
+                const data = await res.json();
+                const select = document.getElementById('ollama-models');
+                select.innerHTML = '';
+                if (data.models && data.models.length > 0) {
+                    data.models.forEach(model => {
+                        const opt = document.createElement('option');
+                        opt.value = model;
+                        opt.textContent = model;
+                        select.appendChild(opt);
+                    });
+                } else {
+                    const opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = '모델 없음';
+                    select.appendChild(opt);
+                }
+            } catch (e) {
+                const select = document.getElementById('ollama-models');
+                select.innerHTML = '';
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '모델 목록 불러오기 실패';
+                select.appendChild(opt);
+            }
+        }
+        function getSelectedModel() {
+            const select = document.getElementById('ollama-models');
+            return select.value;
+        }
+        // 페이지 로드 시 Ollama 상태/모델 목록 불러오기
+        window.addEventListener('DOMContentLoaded', fetchOllamaStatusAndModels);
+
+        // 프로그레스바 단계별 매핑
+        const progressSteps = [
+            { step: 'OCR', percent: 20 },
+            { step: 'Chunking', percent: 40 },
+            { step: 'Embedding', percent: 60 },
+            { step: 'Storing', percent: 80 },
+            { step: 'Done', percent: 100 },
+            { step: 'Error', percent: 100 },
+        ];
+        let progressInterval = null;
+        function startProgressPolling(documentId) {
+            const progressContainer = document.getElementById('progress-container');
+            const progressBarInner = document.getElementById('progress-bar-inner');
+            const progressMessage = document.getElementById('progress-message');
+            progressContainer.style.display = 'block';
+            progressBarInner.style.width = '0%';
+            progressMessage.textContent = '처리 대기 중...';
+            if(progressInterval) clearInterval(progressInterval);
+            progressInterval = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/upload_status/${documentId}`);
+                    const data = await res.json();
+                    const stepInfo = progressSteps.find(s => s.step === data.step) || { percent: 0 };
+                    progressBarInner.style.width = stepInfo.percent + '%';
+                    progressMessage.textContent = data.message || '';
+                    if(data.step === 'Done') {
+                        progressMessage.textContent = '✅ ' + data.message;
+                        clearInterval(progressInterval);
+                    } else if(data.step === 'Error') {
+                        progressMessage.textContent = '❌ ' + data.message;
+                        progressBarInner.style.background = '#dc3545';
+                        clearInterval(progressInterval);
+                    }
+                } catch (e) {
+                    progressMessage.textContent = '상태 확인 실패';
+                }
+            }, 1500);
+        }
+
+        // 문서 목록 불러오기 및 드롭다운 갱신
+        async function fetchDocumentList() {
+            try {
+                const res = await fetch('/api/documents');
+                const data = await res.json();
+                
+                // 채팅용 드롭다운 업데이트
+                const select = document.getElementById('document-select');
+                const info = document.getElementById('document-info');
+                select.innerHTML = '';
+                // 전체 문서 옵션 추가
+                const allOpt = document.createElement('option');
+                allOpt.value = '__ALL__';
+                allOpt.textContent = '전체 문서';
+                select.appendChild(allOpt);
+                
+                // 문서 관리 목록 업데이트
+                const documentList = document.getElementById('document-list');
+                documentList.innerHTML = '';
+                
+                if (data.documents && data.documents.length > 0) {
+                    data.documents.forEach(doc => {
+                        // 채팅용 드롭다운
+                        const opt = document.createElement('option');
+                        opt.value = doc.document_id;
+                        opt.textContent = `${doc.document_id} (${doc.chunk_count}청크)`;
+                        opt.setAttribute('data-preview', doc.first_chunk_preview || '');
+                        select.appendChild(opt);
+                        
+                        // 문서 관리 목록
+                        const docDiv = document.createElement('div');
+                        docDiv.className = 'document-item';
+                        docDiv.innerHTML = `
+                            <div class="document-info">
+                                <div class="document-title">📄 ${doc.document_id}</div>
+                                <div class="text-muted">${doc.chunk_count} 청크</div>
+                                <div class="document-preview">
+                                    ${doc.first_chunk_preview ? doc.first_chunk_preview.slice(0, 100) + '...' : '미리보기 없음'}
+                                </div>
+                            </div>
+                            <div class="document-actions">
+                                <button onclick="deleteDocument('${doc.document_id}')" class="btn btn-danger" style="padding: 6px 12px; font-size: 0.9rem;">
+                                    🗑️ 삭제
+                                </button>
+                            </div>
+                        `;
+                        documentList.appendChild(docDiv);
+                    });
+                    // 첫 문서 정보 표시
+                    info.textContent = data.documents[0].first_chunk_preview ? `미리보기: ${data.documents[0].first_chunk_preview.slice(0, 60)}...` : '';
+                } else {
+                    const opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = '저장된 문서 없음';
+                    select.appendChild(opt);
+                    info.textContent = '';
+                    
+                    documentList.innerHTML = '<div class="text-center text-muted">📭 저장된 문서가 없습니다.</div>';
+                }
+            } catch (e) {
+                const select = document.getElementById('document-select');
+                select.innerHTML = '';
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '문서 목록 불러오기 실패';
+                select.appendChild(opt);
+                document.getElementById('document-info').textContent = '';
+                document.getElementById('document-list').innerHTML = '<div class="status-message status-error">❌ 문서 목록 불러오기 실패</div>';
+            }
+        }
+        function getSelectedDocumentIds() {
+            const select = document.getElementById('document-select');
+            const values = Array.from(select.selectedOptions).map(opt => opt.value);
+            // 전체 문서 선택 시 빈 배열 반환(백엔드에서 전체 검색)
+            if (values.includes('__ALL__')) return [];
+            return values;
+        }
+
+        // 문서 관리 기능들
+        async function deleteDocument(documentId) {
+            if (!confirm(`문서 "${documentId}"를 정말 삭제하시겠습니까?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/documents/${documentId}`, {
+                    method: 'DELETE'
+                });
+                const result = await response.json();
+                
+                if (response.ok) {
+                    const statusEl = document.getElementById('management-status');
+                    statusEl.textContent = `✅ 문서 "${documentId}" 삭제 완료`;
+                    statusEl.className = 'status-message status-success';
+                    fetchDocumentList(); // 목록 새로고침
+                } else {
+                    const statusEl = document.getElementById('management-status');
+                    statusEl.textContent = `❌ 삭제 실패: ${result.detail}`;
+                    statusEl.className = 'status-message status-error';
+                }
+            } catch (error) {
+                const statusEl = document.getElementById('management-status');
+                statusEl.textContent = `❌ 네트워크 오류: ${error.message}`;
+                statusEl.className = 'status-message status-error';
+            }
+        }
+        
+        async function deleteAllDocuments() {
+            if (!confirm('모든 문서를 정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/documents', {
+                    method: 'DELETE'
+                });
+                const result = await response.json();
+                
+                if (response.ok) {
+                    const statusEl = document.getElementById('management-status');
+                    statusEl.textContent = 
+                        `✅ 모든 문서 삭제 완료 (문서: ${result.deleted_documents_count}개, 파일: ${result.deleted_files_count}개)`;
+                    statusEl.className = 'status-message status-success';
+                    fetchDocumentList(); // 목록 새로고침
+                } else {
+                    const statusEl = document.getElementById('management-status');
+                    statusEl.textContent = `❌ 삭제 실패: ${result.detail}`;
+                    statusEl.className = 'status-message status-error';
+                }
+            } catch (error) {
+                const statusEl = document.getElementById('management-status');
+                statusEl.textContent = `❌ 네트워크 오류: ${error.message}`;
+                statusEl.className = 'status-message status-error';
+            }
+        }
+        
+        async function showStorageStats() {
+            try {
+                const response = await fetch('/api/storage/stats');
+                const result = await response.json();
+                
+                if (response.ok) {
+                    const stats = `📊 저장소 통계:\n` +
+                        `파일: ${result.file_storage.total_files}개 (${result.file_storage.total_size_mb}MB)\n` +
+                        `문서: ${result.vector_db.total_documents}개\n` +
+                        `청크: ${result.vector_db.total_chunks}개`;
+                    alert(stats);
+                } else {
+                    const statusEl = document.getElementById('management-status');
+                    statusEl.textContent = `❌ 통계 조회 실패: ${result.detail}`;
+                    statusEl.className = 'status-message status-error';
+                }
+            } catch (error) {
+                const statusEl = document.getElementById('management-status');
+                statusEl.textContent = `❌ 네트워크 오류: ${error.message}`;
+                statusEl.className = 'status-message status-error';
+            }
+        }
+        
+        async function cleanupOrphanedFiles() {
+            if (!confirm('고아 파일들을 정리하시겠습니까?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/documents/cleanup', {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                
+                if (response.ok) {
+                    const statusEl = document.getElementById('management-status');
+                    statusEl.textContent = 
+                        `✅ 정리 완료: ${result.cleaned_files_count}개 파일 정리됨`;
+                    statusEl.className = 'status-message status-success';
+                    fetchDocumentList(); // 목록 새로고침
+                } else {
+                    const statusEl = document.getElementById('management-status');
+                    statusEl.textContent = `❌ 정리 실패: ${result.detail}`;
+                    statusEl.className = 'status-message status-error';
+                }
+            } catch (error) {
+                const statusEl = document.getElementById('management-status');
+                statusEl.textContent = `❌ 네트워크 오류: ${error.message}`;
+                statusEl.className = 'status-message status-error';
+            }
+        }
+        
+        // 이벤트 리스너 추가
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchOllamaStatusAndModels();
+            fetchDocumentList();
+            
+            // 문서 관리 버튼들
+            document.getElementById('refresh-documents').addEventListener('click', fetchDocumentList);
+            document.getElementById('storage-stats').addEventListener('click', showStorageStats);
+            document.getElementById('cleanup-files').addEventListener('click', cleanupOrphanedFiles);
+            document.getElementById('delete-all-documents').addEventListener('click', deleteAllDocuments);
+            
+            // 문서 선택 시 미리보기 갱신
+            const docSelect = document.getElementById('document-select');
+            const info = document.getElementById('document-info');
+            docSelect.addEventListener('change', function() {
+                const previews = Array.from(this.selectedOptions).map(opt => opt.getAttribute('data-preview') || '').filter(Boolean);
+                info.textContent = previews.length > 0 ? `미리보기: ${previews.map(p => p.slice(0, 60)).join(' | ')}...` : '';
+            });
+        });
+
+        // 이미지 모달 기능 임시 비활성화
+        // Image modal functionality temporarily disabled
+        
+        // 표 확장/축소 기능
+        function toggleTableExpand(tableId) {
+            const table = document.getElementById(tableId);
+            const hiddenRows = table.querySelectorAll('.hidden-row');
+            const expandIndicator = table.querySelector('.table-expand-indicator');
+            const button = table.parentElement.querySelector('.btn-small');
+            
+            if (table.classList.contains('collapsed')) {
+                // 확장
+                hiddenRows.forEach(row => row.style.display = '');
+                if (expandIndicator) expandIndicator.style.display = 'none';
+                button.textContent = '축소하기';
+                table.classList.remove('collapsed');
+            } else {
+                // 축소
+                hiddenRows.forEach(row => row.style.display = 'none');
+                if (expandIndicator) expandIndicator.style.display = '';
+                button.textContent = '전체 보기';
+                table.classList.add('collapsed');
+            }
+        }
+        
+        // ESC 키 이벤트 (이미지 모달 기능 비활성화됨)
+        // document.addEventListener('keydown', function(e) {
+        //     if (e.key === 'Escape') {
+        //         closeImageModal();
+        //     }
+        // });
+        
+        // 마크다운 렌더링(답변에 적용)
+        // marked.js CDN 추가
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js';
+        document.head.appendChild(script);
     </script>
 </body>
 </html>

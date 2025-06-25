@@ -1,17 +1,33 @@
-# OCR LLM Chatbot
+# 멀티모달 RAG 챗봇 (Multimodal RAG Chatbot)
 
-이 프로젝트는 PDF 파일에서 텍스트를 추출 (OCR)하고, 해당 텍스트를 기반으로 질문에 답변하는 RAG (Retrieval Augmented Generation) 챗봇을 웹 애플리케이션 형태로 구현합니다. FastAPI를 백엔드 프레임워크로 사용하며, 로컬 Ollama 인스턴스를 LLM으로 활용합니다.
+이 프로젝트는 PDF 파일에서 텍스트, 이미지, 표를 추출하고, 멀티모달 콘텐츠를 기반으로 질문에 답변하는 고급 RAG (Retrieval Augmented Generation) 챗봇입니다. FastAPI를 백엔드 프레임워크로 사용하며, 로컬 Ollama 인스턴스를 LLM으로 활용합니다.
 
-## 주요 기능
+## ✨ 주요 기능
 
-*   PDF 파일 업로드 (백그라운드 처리 지원)
-*   업로드된 PDF에서 이미지 추출 및 OCR 수행 (PyMuPDF, Pytesseract 사용)
-*   추출된 텍스트를 청크로 분할 (Langchain 사용)
-*   텍스트 청크를 벡터 임베딩으로 변환 (Sentence Transformers 사용, 예: `jhgan/ko-sroberta-multitask`)
-*   벡터 데이터베이스에 텍스트 청크와 임베딩 저장 (ChromaDB 사용)
-*   사용자 질문에 대해 벡터 데이터베이스에서 관련 문맥 검색
-*   검색된 문맥과 사용자 질문을 Ollama LLM (예: `llama2`)에 전달하여 답변 생성
-*   웹 기반 채팅 인터페이스 제공 (FastAPI, HTML, JavaScript)
+### 📄 멀티모달 문서 처리
+*   **PDF 파일 업로드** - 백그라운드 비동기 처리 지원
+*   **텍스트 추출** - PyMuPDF + Pytesseract OCR (한국어/영어 지원)
+*   **이미지 추출** - PDF에서 이미지 자동 추출 및 메타데이터 저장
+*   **표 추출** - OpenCV를 이용한 표 구조 인식 및 데이터 파싱
+*   **텍스트 청킹** - LangChain을 이용한 지능적 텍스트 분할
+
+### 🔍 지능형 검색 시스템
+*   **벡터 임베딩** - Sentence Transformers (`jhgan/ko-sroberta-multitask`)
+*   **멀티모달 저장** - ChromaDB에 텍스트, 이미지, 표 분리 저장
+*   **문서별 필터링** - 특정 문서나 여러 문서에서 선택적 검색
+*   **하이브리드 검색** - 텍스트 벡터 유사도 + 이미지/표 메타데이터 검색
+
+### 🤖 고급 답변 생성
+*   **멀티모달 RAG** - 텍스트, 이미지, 표를 통합한 맥락적 답변
+*   **Ollama LLM 연동** - 로컬 LLM 모델 선택 가능
+*   **출처 표시** - 답변에 참조한 문서, 페이지, 이미지, 표 정보 포함
+*   **마크다운 지원** - 풍부한 형식의 답변 렌더링
+
+### 🎨 현대적 웹 인터페이스
+*   **반응형 디자인** - 모바일/태블릿 최적화
+*   **실시간 진행률** - 문서 처리 단계별 진행 상황 표시
+*   **멀티모달 답변 표시** - 참조된 이미지와 표를 답변과 함께 표시
+*   **문서 관리** - 업로드된 문서 목록, 삭제, 통계 기능
 
 ## 프로젝트 구조
 
@@ -30,6 +46,21 @@ ocr-llm-chatbot/
 ├── requirements.txt        # Python 의존성 목록
 └── README.md
 ```
+
+## 새로운 기능 및 개선사항
+
+### ✨ 주요 개선사항
+- **환경 설정 관리**: 모든 설정값을 환경변수로 분리하여 운영환경별 설정 가능
+- **강화된 보안**: 파일 업로드 검증, MIME 타입 체크, 입력값 검증 및 sanitization
+- **고급 에러 핸들링**: 세분화된 예외 처리와 구조화된 로깅 시스템
+- **성능 최적화**: 임베딩 모델 싱글톤 캐싱, 배치 처리, LRU 캐시 적용
+- **포괄적 테스트**: 단위 테스트 및 API 테스트 포함
+
+### 🔧 기술 스택 개선
+- **보안**: python-magic을 이용한 MIME 타입 검증, CORS 및 Trusted Host 미들웨어
+- **로깅**: 구조화된 로깅 시스템 (콘솔, 파일, 에러 분리)
+- **테스트**: pytest 기반 테스트 스위트 (70% 커버리지 목표)
+- **설정**: 환경변수 기반 설정 관리
 
 ## 설정 및 실행
 
@@ -78,7 +109,14 @@ ocr-llm-chatbot/
     # venv\Scripts\activate    # Windows
     ```
 
-3.  **의존성 설치:**
+3.  **환경 설정:**
+    ```bash
+    # .env.example을 복사하여 .env 파일 생성
+    cp .env.example .env
+    # 필요에 따라 .env 파일을 편집하여 설정 조정
+    ```
+
+4.  **의존성 설치:**
     *   `requirements.txt` 파일에 명시된 모든 라이브러리를 설치합니다.
     *   Sentence Transformer 모델 (예: `jhgan/ko-sroberta-multitask`)은 처음 실행 시 인터넷을 통해 자동으로 다운로드됩니다.
     ```bash
@@ -94,6 +132,20 @@ ocr-llm-chatbot/
     `--reload` 옵션은 코드 변경 시 서버를 자동으로 재시작합니다 (개발 시 유용).
 
 *   실행 후 웹 브라우저에서 `http://localhost:8000`으로 접속합니다.
+
+### 4. 테스트 실행
+
+*   단위 테스트 및 API 테스트를 실행합니다:
+    ```bash
+    # 모든 테스트 실행
+    pytest
+    
+    # 커버리지 포함 테스트 실행
+    pytest --cov=app --cov-report=html
+    
+    # 특정 테스트 파일만 실행
+    pytest tests/test_security.py
+    ```
 
 ## 사용 방법
 

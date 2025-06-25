@@ -1,12 +1,11 @@
 import requests
 import json
 from typing import List, Dict, Any
+from app.config import settings
+from app.utils.logging_config import get_logger
+from app.utils.exceptions import LLMError
 
-# Ollama API 설정
-# 사용자의 로컬 Ollama 서버 주소를 사용합니다.
-# Docker 환경에서는 Docker 네트워크 설정을 고려해야 할 수 있습니다 (예: host.docker.internal 또는 서비스 이름).
-OLLAMA_API_URL = "http://localhost:11434/api/generate"
-DEFAULT_MODEL = "llama2" # 사용자가 Ollama에 다운로드한 모델 이름
+logger = get_logger(__name__)
 
 def get_llm_response(prompt: str, model_name: str = None, options: Dict = None, stream: bool = False) -> str:
     """
@@ -26,22 +25,27 @@ def get_llm_response(prompt: str, model_name: str = None, options: Dict = None, 
         str: The LLM's response text, or an error message if something goes wrong.
     """
     if not model_name:
-        model_name = DEFAULT_MODEL
+        model_name = settings.OLLAMA_DEFAULT_MODEL
 
     payload = {
         "model": model_name,
         "prompt": prompt,
-        "stream": stream, # 스트리밍 여부
-        # "options": options if options else {} # Ollama 옵션 (예: "options": {"temperature": 0.7})
+        "stream": stream,
     }
     if options:
         payload["options"] = options
 
-    print(f"LLM Service: Sending prompt to Ollama model '{model_name}'. Prompt (first 100 chars): {prompt[:100]}...")
+    logger.info(f"Sending prompt to Ollama model '{model_name}'. Prompt length: {len(prompt)} chars")
+    logger.debug(f"Prompt preview: {prompt[:200]}...")
 
     try:
-        response = requests.post(OLLAMA_API_URL, json=payload, stream=stream)
-        response.raise_for_status()  # HTTP 오류 발생 시 예외 발생
+        response = requests.post(
+            settings.OLLAMA_API_URL, 
+            json=payload, 
+            stream=stream,
+            timeout=settings.OLLAMA_TIMEOUT
+        )
+        response.raise_for_status()
 
         if stream:
             full_response = ""
@@ -55,26 +59,30 @@ def get_llm_response(prompt: str, model_name: str = None, options: Dict = None, 
                         if json_chunk.get('done', False): # Check for the 'done' field
                             break
                     except json.JSONDecodeError:
-                        print(f"LLM Service: Non-JSON line in stream: {decoded_line}")
-            print("LLM Service: Streamed response received and aggregated.")
+                        logger.warning(f"Non-JSON line in stream: {decoded_line}")
+            logger.info("Streamed response received and aggregated")
             return full_response.strip()
         else:
             response_data = response.json()
-            print("LLM Service: Non-streamed response received.")
+            logger.info("Non-streamed response received")
             return response_data.get("response", "Error: No 'response' field in LLM output.").strip()
 
     except requests.exceptions.ConnectionError as e:
-        error_msg = f"LLM Service Error: Could not connect to Ollama at {OLLAMA_API_URL}. Ensure Ollama is running. Details: {e}"
-        print(error_msg)
-        return error_msg
+        error_msg = f"Could not connect to Ollama at {settings.OLLAMA_API_URL}. Ensure Ollama is running."
+        logger.error(f"{error_msg} Details: {e}")
+        raise LLMError(error_msg, "CONNECTION_ERROR")
     except requests.exceptions.HTTPError as e:
-        error_msg = f"LLM Service Error: HTTP error occurred: {e}. Response: {e.response.text if e.response else 'No response body'}"
-        print(error_msg)
-        return error_msg
+        error_msg = f"HTTP error occurred: {e}"
+        logger.error(f"{error_msg}. Response: {e.response.text if e.response else 'No response body'}")
+        raise LLMError(error_msg, "HTTP_ERROR")
+    except requests.exceptions.Timeout as e:
+        error_msg = f"Request timed out after {settings.OLLAMA_TIMEOUT} seconds"
+        logger.error(f"{error_msg}: {e}")
+        raise LLMError(error_msg, "TIMEOUT_ERROR")
     except Exception as e:
-        error_msg = f"LLM Service Error: An unexpected error occurred: {e}"
-        print(error_msg)
-        return error_msg
+        error_msg = f"An unexpected error occurred: {e}"
+        logger.error(error_msg)
+        raise LLMError(error_msg, "UNEXPECTED_ERROR")
 
 
 def construct_rag_prompt(query: str, context_chunks: List[str], lang: str = "ko") -> str:
@@ -102,8 +110,11 @@ def construct_rag_prompt(query: str, context_chunks: List[str], lang: str = "ko"
 {query}
 
 [지침]
+- 답변은 마크다운(Markdown) 형식으로 작성해주세요. 표, 코드, 강조, 리스트, 링크, 이미지 등 다양한 서식을 적극적으로 활용하세요.
+- 각 문맥 청크별로 [출처:문서ID] 태그가 있으니, 답변에 해당 정보를 반드시 포함하여 출처를 명확히 표시하세요.
 - 문맥 정보에서 질문에 대한 답을 찾을 수 있는 경우, 해당 정보를 사용하여 답변을 생성해주세요.
-- 답변은 완전한 문장으로, 명확하고 간결하게 작성해주세요.
+- 답변은 완전한 문장으로, 명확하고 친절하게, 최대한 자세하고 길게 작성해주세요.
+- 예시, 표, 코드, 추가 설명이 가능하다면 포함해주세요.
 - 만약 문맥 정보에서 질문에 대한 답을 찾을 수 없다면, "제공된 문맥 정보만으로는 질문에 답변하기 어렵습니다."라고 답변해주세요.
 - 답변에 개인적인 의견이나 문맥 정보에 없는 내용을 추가하지 마세요.
 - 한국어로 답변해주세요.
@@ -121,8 +132,11 @@ def construct_rag_prompt(query: str, context_chunks: List[str], lang: str = "ko"
 {query}
 
 [Instructions]
+- Write your answer in Markdown format. Use tables, code, emphasis, lists, links, images, etc. as appropriate.
+- Each context chunk has a [Source:DocumentID] tag. Be sure to include this information in your answer to clearly indicate the source.
 - If you can find the answer to the question in the context information, please use that information to generate your answer.
-- Your answer should be a complete sentence, clear, and concise.
+- Your answer should be a complete sentence, clear, and as detailed and long as possible.
+- If possible, include examples, tables, code, or additional explanations.
 - If you cannot find the answer to the question in the context information, please respond with "It is difficult to answer the question based on the provided context information alone."
 - Do not add personal opinions or information not present in the context.
 - Please answer in English.
@@ -145,7 +159,7 @@ def process_llm_chat_request(user_query: str,
         user_query (str): The user's question.
         retrieved_docs (List[Dict[str, Any]]): List of documents (chunks) retrieved from vector DB.
                                                Each dict should have a "text" key.
-        model_name (str, optional): Ollama model name. Defaults to DEFAULT_MODEL.
+        model_name (str, optional): Ollama model name. Defaults to settings.OLLAMA_DEFAULT_MODEL.
         lang (str, optional): Language for the prompt. Defaults to "ko".
 
     Returns:
@@ -157,7 +171,14 @@ def process_llm_chat_request(user_query: str,
         else:
             return "No relevant documents found to generate an answer."
 
-    context_chunks = [doc.get("text", "") for doc in retrieved_docs if doc.get("text")]
+    # 각 청크에 출처 태그 추가
+    context_chunks = []
+    for doc in retrieved_docs:
+        text = doc.get("text", "")
+        meta = doc.get("metadata", {})
+        source = meta.get("source_document_id", "?")
+        if text:
+            context_chunks.append(f"{text}\n\n[출처:{source}]")
     if not context_chunks:
         if lang == "ko":
             return "검색된 문서에 내용이 없어 답변을 생성할 수 없습니다."
@@ -167,18 +188,25 @@ def process_llm_chat_request(user_query: str,
     rag_prompt = construct_rag_prompt(user_query, context_chunks, lang=lang)
 
     # Ollama 모델 옵션 (필요에 따라 추가/수정)
-    # 예: 더 일관된 답변을 위해 temperature 낮추기
     ollama_options = {
-        "temperature": 0.5,
-        # "num_predict": 256, # 최대 생성 토큰 수 (모델 기본값 사용)
+        "temperature": 0.8,  # 더 다양한 답변
+        "num_predict": 2048,  # 답변 최대 토큰 수 대폭 증가
     }
 
-    llm_response = get_llm_response(rag_prompt, model_name=model_name, options=ollama_options, stream=False) # 스트리밍은 UI에서 처리하는 것이 더 복잡하므로 일단 False
-    return llm_response
+    try:
+        llm_response = get_llm_response(rag_prompt, model_name=model_name, options=ollama_options, stream=False)
+        logger.info(f"Successfully generated LLM response for query: {user_query[:50]}...")
+        return llm_response
+    except LLMError as e:
+        logger.error(f"LLM error in chat request: {e}")
+        if lang == "ko":
+            return f"답변 생성 중 오류가 발생했습니다: {e.message}"
+        else:
+            return f"An error occurred while generating response: {e.message}"
 
 
 if __name__ == '__main__':
-    print(f"LLM service module loaded. Ollama API URL: {OLLAMA_API_URL}, Default Model: {DEFAULT_MODEL}")
+    print(f"LLM service module loaded. Ollama API URL: {settings.OLLAMA_API_URL}, Default Model: {settings.OLLAMA_DEFAULT_MODEL}")
 
     # --- Test RAG Prompt Construction ---
     print("\n--- Testing RAG Prompt Construction (Korean) ---")

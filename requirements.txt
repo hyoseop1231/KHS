@@ -1,11 +1,19 @@
-fastapi
-uvicorn[standard]
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
 python-multipart # For file uploads
 jinja2 # For HTML templates
 PyMuPDF # For PDF processing
 pytesseract # For OCR
 Pillow # Pytesseract dependency for image manipulation
-sentence-transformers # For text embeddings
-langchain # For text splitting and other LLM utilities
-chromadb # For vector database
+sentence-transformers>=2.2.0 # For text embeddings
+langchain>=0.0.350 # For text splitting and other LLM utilities
+chromadb>=0.4.15 # For vector database
 requests # For HTTP requests to Ollama API
+python-magic # For MIME type detection (optional)
+python-dotenv # For environment variable management
+opencv-python>=4.8.0 # For image processing and table detection
+pandas>=2.0.0 # For table data processing
+numpy>=1.24.0 # For numerical operations
+pytest # For testing
+pytest-asyncio # For async testing
+pytest-cov # For test coverage
