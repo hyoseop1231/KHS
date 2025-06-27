@@ -62,51 +62,63 @@ def extract_multimodal_content_from_pdf(pdf_path: str, document_id: str) -> Dict
             logger.debug(f"Processing page {page_num + 1}/{len(doc)}")
             page = doc.load_page(page_num)
             
-            # Extract text using OCR
-            pix = page.get_pixmap(dpi=settings.OCR_DPI)
-            img_bytes = pix.tobytes("png")
-            img = Image.open(io.BytesIO(img_bytes))
+            # --- Pytesseract OCR 로직 (주석 처리 또는 제거) ---
+            # pix = page.get_pixmap(dpi=settings.OCR_DPI)
+            # img_bytes = pix.tobytes("png")
+            # img = Image.open(io.BytesIO(img_bytes))
             
-            try:
-                text = pytesseract.image_to_string(img, lang=settings.OCR_LANGUAGES)
-                text = correct_foundry_terms(text)
-                full_text.append(text)
-                logger.debug(f"Page {page_num + 1} OCR completed. Text length: {len(text)} chars")
+            # try:
+            #     text = pytesseract.image_to_string(img, lang=settings.OCR_LANGUAGES)
+            #     text = correct_foundry_terms(text)
+            #     full_text.append(text)
+            #     logger.debug(f"Page {page_num + 1} OCR completed. Text length: {len(text)} chars")
                 
-            except pytesseract.TesseractNotFoundError:
-                error_msg = "Tesseract is not installed or not in your PATH. Please install Tesseract and try again."
-                logger.error(error_msg)
-                raise OCRError(error_msg, "TESSERACT_NOT_FOUND")
-            except Exception as ocr_error:
-                logger.warning(f"OCR error on page {page_num + 1}: {ocr_error}")
-                full_text.append(f"[OCR Error on page {page_num + 1}]")
+            # except pytesseract.TesseractNotFoundError:
+            #     error_msg = "Tesseract is not installed or not in your PATH. Please install Tesseract and try again."
+            #     logger.error(error_msg)
+            #     raise OCRError(error_msg, "TESSERACT_NOT_FOUND")
+            # except Exception as ocr_error:
+            #     logger.warning(f"OCR error on page {page_num + 1}: {ocr_error}")
+            #     full_text.append(f"[OCR Error on page {page_num + 1}]")
+            # --- Pytesseract OCR 로직 끝 ---
             
-            # Image extraction temporarily disabled for stability
+            # 현재 이 함수는 tasks.py의 ingest_pdf로 대체되었으므로,
+            # 이 함수의 OCR 부분은 더 이상 직접 사용되지 않음.
+            # 텍스트는 ingest_pdf에서 PaddleOCR로 추출될 것임.
+            # 여기서는 임시로 빈 텍스트 또는 플레이스홀더 추가.
+            full_text.append(f"[Text from page {page_num + 1} - to be extracted by PaddleOCR in tasks.py]")
             
-            # Extract tables from page
-            page_tables = extract_tables_from_page(img, page_num, tables_dir, document_id)
+
+            # Image extraction temporarily disabled for stability (기존 주석 유지)
+
+            # Extract tables from page - 이 로직은 OCR과 별개로 이미지 처리를 하므로 일단 유지
+            # 표 추출을 위해서는 페이지 이미지가 필요함.
+            pix_for_table = page.get_pixmap(dpi=settings.OCR_DPI) # 표 추출용 이미지 생성
+            img_for_table_bytes = pix_for_table.tobytes("png")
+            img_for_table = Image.open(io.BytesIO(img_for_table_bytes))
+            page_tables = extract_tables_from_page(img_for_table, page_num, tables_dir, document_id)
             extracted_tables.extend(page_tables)
             
         except Exception as page_error:
-            logger.warning(f"Error processing page {page_num + 1}: {page_error}")
+            logger.warning(f"Error processing page {page_num + 1} in ocr_service.py (extract_multimodal_content): {page_error}", exc_info=True)
             full_text.append(f"[Error processing page {page_num + 1}]")
 
     doc.close()
-    extracted_text = "\n".join(full_text)
+    extracted_text = "\n".join(full_text) # 이 텍스트는 PaddleOCR 결과로 대체될 것임
     
-    logger.info(f"Multimodal extraction completed:")
-    logger.info(f"  - Text length: {len(extracted_text)} chars")
-    logger.info(f"  - Images extracted: {len(extracted_images)}")
+    logger.info(f"Multimodal extraction (ocr_service.py - Pytesseract part deactivated) completed:")
+    logger.info(f"  - Placeholder text length: {len(extracted_text)} chars")
+    logger.info(f"  - Images extracted (disabled): {len(extracted_images)}")
     logger.info(f"  - Tables extracted: {len(extracted_tables)}")
     
     return {
-        "text": extracted_text,
-        "images": extracted_images,
-        "tables": extracted_tables,
+        "text": extracted_text, # 실제 텍스트는 tasks.py에서 생성
+        "images": extracted_images, # 현재 비활성화 상태
+        "tables": extracted_tables, # 표 추출 결과
         "content_dir": content_dir
     }
 
-# Image extraction temporarily removed for stability
+# Image extraction temporarily removed for stability (기존 주석 유지)
 
 def extract_tables_from_page(page_image: Image.Image, page_num: int, tables_dir: str, document_id: str) -> List[Dict[str, Any]]:
     """
