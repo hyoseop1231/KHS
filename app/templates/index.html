@@ -1027,10 +1027,19 @@
         
         // 다중 파일 진행률 추적 변수들
         let multiFileTracking = {
-            files: new Map(), // documentId -> {filename, status, interval}
+            files: new Map(), // documentId -> {filename, status, interval, startTime}
             intervals: new Set(),
             hideTimeout: null
         };
+        
+        // 경과시간 포맷팅 함수
+        function formatElapsedTime(startTime) {
+            if (!startTime) return '';
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
         
         // 다중 파일 진행률 추적 시작
         function startMultiFileProgressTracking(files) {
@@ -1104,6 +1113,8 @@
         
         // 개별 파일 진행률 추적
         function startIndividualFileTracking(documentId, filename) {
+            const startTime = Date.now(); // 처리 시작 시간 기록
+            
             const interval = setInterval(async () => {
                 try {
                     const res = await fetch(`/api/upload_status/${documentId}`);
@@ -1113,11 +1124,14 @@
                     
                     // 파일 상태 업데이트 - 백엔드 percent 값 우선 사용
                     const actualPercent = data.percent !== undefined ? data.percent : (progressSteps.find(s => s.step === data.step) || { percent: 0 }).percent;
+                    const fileInfo = multiFileTracking.files.get(documentId) || {};
                     multiFileTracking.files.set(documentId, {
+                        ...fileInfo,
                         filename,
                         status: data.step,
                         progress: actualPercent,
-                        completed: data.step === 'Done' || data.step === 'Error'
+                        completed: data.step === 'Done' || data.step === 'Error',
+                        startTime: fileInfo.startTime || startTime // 시작 시간 유지
                     });
                     
                     // 전체 진행률 업데이트 (실시간)
@@ -1139,7 +1153,8 @@
                 filename,
                 status: 'processing',
                 interval,
-                completed: false
+                completed: false,
+                startTime: startTime // 시작 시간 저장
             });
         }
         
@@ -1224,12 +1239,12 @@
                 if (statusText) statusText.textContent = '처리 중';
                 if (fileIcon) fileIcon.textContent = '⚙️';
                 if (timeInfo) {
-                    const now = new Date();
-                    timeInfo.textContent = now.toLocaleTimeString('ko-KR', { 
-                        hour: '2-digit', 
-                        minute: '2-digit', 
-                        second: '2-digit' 
-                    });
+                    const fileInfo = multiFileTracking.files.get(documentId);
+                    if (fileInfo && fileInfo.startTime) {
+                        timeInfo.textContent = formatElapsedTime(fileInfo.startTime);
+                    } else {
+                        timeInfo.textContent = '00:00';
+                    }
                 }
             }
         }
@@ -1330,10 +1345,9 @@
                 statusClass = 'processing';
             }
             
-            // 타임스탬프 추가 (옵션)
-            const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleTimeString('ko-KR', {
-                hour: '2-digit', minute: '2-digit', second: '2-digit'
-            }) : '';
+            // 경과시간 추가 (옵션)
+            const fileInfo = multiFileTracking.files.get(documentId);
+            const elapsedTime = (fileInfo && fileInfo.startTime) ? formatElapsedTime(fileInfo.startTime) : '';
             
             // 동적으로 현재 단계 표시 (더 상세한 정보 포함)
             processStepsContainer.innerHTML = `
@@ -1342,7 +1356,7 @@
                         <div class="step-icon ${statusClass}">${stepIcon}</div>
                         <div class="step-text">
                             <div class="main-text">${stepText}</div>
-                            ${timestamp ? `<div class="timestamp">${timestamp}</div>` : ''}
+                            ${elapsedTime ? `<div class="elapsed-time">${elapsedTime}</div>` : ''}
                         </div>
                     </div>
                     ${data.details && Object.keys(data.details).length > 0 ? 
