@@ -3,38 +3,145 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>주물기술총서 기반 RAG 챗봇</title>
+    <title>KITECH RAG Chatbot</title>
     <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
 </head>
 <body>
     <div class="container">
-        <h1>주물기술총서 기반 RAG 챗봇</h1>
+        <h1>KITECH RAG Chatbot</h1>
 
         <div class="ollama-section">
-            <h2>Ollama 상태 및 모델 선택</h2>
-            <div id="ollama-status">Ollama 상태: 확인 중...</div>
-            <label for="ollama-models">사용할 모델 선택:</label>
-            <select id="ollama-models"></select>
+            <h2>시스템 상태 대시보드</h2>
+            
+            <!-- 첫 번째 줄: Ollama & 모델 선택 (균등 배치) -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; align-items: center; margin-bottom: 15px;">
+                <!-- Ollama 상태 -->
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div id="ollama-status" style="font-size: 0.95em;">Ollama 상태: 확인 중...</div>
+                </div>
+                
+                <!-- 모델 선택 -->
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label for="ollama-models" style="margin: 0; white-space: nowrap; font-size: 0.95em;">모델:</label>
+                    <select id="ollama-models" style="flex: 1; min-width: 0;">
+                        <option value="">로딩 중...</option>
+                    </select>
+                </div>
+                
+                <!-- 모델 정보 & 작동 상태 -->
+                <div id="model-info-container" style="display: flex; align-items: center; gap: 12px;">
+                    <div id="model-info" style="font-size: 0.85em; color: #495057; flex: 1; min-width: 0;">
+                        모델 정보 로딩 중...
+                    </div>
+                    <div id="model-activity" style="display: none; align-items: center; gap: 8px;">
+                        <div id="activity-gauge" style="width: 20px; height: 20px; border-radius: 50%; background: conic-gradient(#28a745 0deg, #e9ecef 0deg); position: relative; transition: all 0.3s ease;">
+                            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 12px; height: 12px; background: white; border-radius: 50%;"></div>
+                        </div>
+                        <span id="activity-text" style="font-size: 0.8em; color: #28a745; font-weight: 500;">대기중</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 두 번째 줄: 시스템 통계 & 빠른 설정 -->
+            <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;">
+                <!-- 시스템 통계 -->
+                <div style="display: flex; gap: 20px; flex: 1; min-width: 300px;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.2em; font-weight: 600; color: #495057;" id="doc-count">0</div>
+                        <div style="font-size: 0.8em; color: #6c757d;">문서</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.2em; font-weight: 600; color: #495057;" id="chunk-count">0</div>
+                        <div style="font-size: 0.8em; color: #6c757d;">청크</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.2em; font-weight: 600; color: #495057;" id="storage-size">0MB</div>
+                        <div style="font-size: 0.8em; color: #6c757d;">저장공간</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.9em; font-weight: 500; color: #6c757d;" id="last-update">업데이트 없음</div>
+                        <div style="font-size: 0.8em; color: #6c757d;">마지막 업데이트</div>
+                    </div>
+                </div>
+                
+                <!-- 빠른 설정 토글 -->
+                <div style="display: flex; gap: 15px; align-items: center; border-left: 1px solid #dee2e6; padding-left: 20px;">
+                    <label style="display: flex; align-items: center; gap: 5px; margin: 0; font-size: 0.9em; cursor: pointer;">
+                        <input type="checkbox" id="ocr-correction-toggle" checked style="margin: 0;">
+                        <span>OCR 교정</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 5px; margin: 0; font-size: 0.9em; cursor: pointer;">
+                        <input type="checkbox" id="llm-correction-toggle" checked style="margin: 0;">
+                        <span>LLM 교정</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 5px; margin: 0; font-size: 0.9em; cursor: pointer;">
+                        <input type="checkbox" id="auto-refresh-toggle" checked style="margin: 0;">
+                        <span>자동새로고침</span>
+                    </label>
+                </div>
+            </div>
         </div>
 
         <div class="upload-section">
-            <h2>PDF 파일 업로드</h2>
+            <h2>문서 업로드 및 처리</h2>
             <form id="upload-form">
                 <label for="pdf-file">PDF 선택:</label>
-                <input type="file" id="pdf-file" name="file" accept=".pdf" required>
-                <button type="submit">업로드 및 처리</button>
+                <input type="file" id="pdf-file" name="files" accept=".pdf" multiple required>
+                
+                <!-- 선택된 파일 목록 표시 -->
+                <div id="selected-files-container" style="display:none; margin-top:15px;">
+                    <h4 style="margin: 10px 0; color: #495057;">선택된 파일 목록:</h4>
+                    <div id="selected-files-list" style="max-height: 200px; overflow-y: auto; border: 1px solid #e9ecef; border-radius: 8px; padding: 10px; background: #f8f9fa;">
+                        <!-- 선택된 파일들이 여기에 체크박스와 함께 표시됩니다 -->
+                    </div>
+                    <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">
+                        <button type="button" id="select-all-btn" style="background: #6c757d; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 0.9em;">전체 선택</button>
+                        <button type="button" id="deselect-all-btn" style="background: #6c757d; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 0.9em;">전체 해제</button>
+                        <span id="selected-count" style="font-size: 0.9em; color: #6c757d;">0개 파일 선택됨</span>
+                    </div>
+                </div>
+                
+                <button type="submit" id="upload-submit-btn">업로드 및 처리</button>
             </form>
             <div id="upload-status" class="status-message"></div>
-            <div id="progress-container" style="display:none; margin-top:10px;">
-                <div id="progress-bar" style="height:20px; background:#e0e0e0; border-radius:10px; overflow:hidden;">
-                    <div id="progress-bar-inner" style="height:100%; width:0%; background:#007bff; transition:width 0.3s;"></div>
+            <div id="progress-container" style="display:none; margin-top:15px; border:1px solid #ddd; border-radius:8px; padding:15px; background:#f8f9fa;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h4 style="margin: 0; color: #495057;">파일 처리 진행 상황</h4>
+                    <button id="hide-progress" style="background: none; border: none; font-size: 1.2em; cursor: pointer; color: #6c757d;" title="진행률 창 숨기기">✕</button>
                 </div>
-                <div id="progress-message" style="margin-top:8px; text-align:center;"></div>
+                
+                <!-- 전체 진행률 -->
+                <div id="overall-progress" style="margin-bottom: 15px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span id="overall-progress-text">전체 진행률</span>
+                        <span id="overall-progress-count">0/0 완료</span>
+                    </div>
+                    <div style="height:8px; background:#e0e0e0; border-radius:4px; overflow:hidden;">
+                        <div id="overall-progress-bar" style="height:100%; width:0%; background:#28a745; transition:width 0.3s;"></div>
+                    </div>
+                </div>
+                
+                <!-- 개별 파일 진행률 컨테이너 -->
+                <div id="individual-progress-container">
+                    <!-- 개별 파일 진행률이 여기에 동적으로 추가됩니다 -->
+                </div>
+                
+                <!-- 완료 후 자동 숨김 설정 -->
+                <div style="margin-top: 10px; font-size: 0.9em; color: #6c757d; text-align: center;">
+                    <label>
+                        <input type="checkbox" id="auto-hide-progress" checked style="margin-right: 5px;">
+                        모든 파일 처리 완료 시 자동으로 숨기기 (10초 후)
+                    </label>
+                </div>
             </div>
         </div>
 
         <div class="document-management-section">
-            <h2>문서 관리</h2>
+            <h2>문서 관리 
+                <span id="auto-refresh-indicator" style="font-size: 0.8em; color: #28a745; margin-left: 10px;">
+                    🔄 자동 새로고침 활성화
+                </span>
+            </h2>
             <div style="margin-bottom:15px;">
                 <button id="refresh-documents" style="margin-right:10px;">문서 목록 새로고침</button>
                 <button id="storage-stats" style="margin-right:10px;">저장소 통계</button>
@@ -52,10 +159,17 @@
         <div class="chat-section">
             <h2>챗봇과 대화하기</h2>
             <div style="margin-bottom:10px;">
-                <label for="document-select">문서 선택 (여러 개 선택 가능):</label>
-                <select id="document-select" multiple size="4" style="min-width:220px;"></select>
-                <span id="document-info" style="font-size:0.95em; color:#666; margin-left:8px;"></span>
-                <div style="font-size:0.92em; color:#888; margin-top:4px;">Ctrl(또는 ⌘)을 누른 채 여러 문서를 선택하거나, '전체 문서'를 선택하면 모든 문서에서 검색합니다.</div>
+                <label>문서 선택:</label>
+                <div id="chat-docs-container" style="margin-top:5px;">
+                    <div>
+                        <input type="checkbox" id="select-all-docs" checked>
+                        <label for="select-all-docs" style="font-weight:600;">전체 문서</label>
+                    </div>
+                    <div id="individual-doc-checkboxes" style="max-height:120px; overflow-y:auto; margin-top:5px; padding-left:10px; border-left:2px solid #ccc;">
+                        <!-- 개별 문서 체크박스 리스트가 동적으로 생성됩니다 -->
+                    </div>
+                </div>
+                <span id="document-info" style="display:block; font-size:0.95em; color:#666; margin-top:4px;"></span>
             </div>
             
             <!-- Chat Progress Indicator -->
@@ -102,12 +216,141 @@
         const sendButton = document.getElementById('send-button');
         const chatStatus = document.getElementById('chat-status');
 
+        // 파일 선택 상태 관리
+        let selectedFilesForUpload = new Set();
+        
+        // 파일 선택 시 이벤트 리스너
+        pdfFile.addEventListener('change', function(event) {
+            const files = Array.from(event.target.files);
+            displaySelectedFiles(files);
+        });
+        
+        // 선택된 파일 목록 표시
+        function displaySelectedFiles(files) {
+            const container = document.getElementById('selected-files-container');
+            const filesList = document.getElementById('selected-files-list');
+            const selectedCount = document.getElementById('selected-count');
+            
+            if (files.length === 0) {
+                container.style.display = 'none';
+                selectedFilesForUpload.clear();
+                return;
+            }
+            
+            container.style.display = 'block';
+            selectedFilesForUpload.clear();
+            
+            filesList.innerHTML = '';
+            files.forEach((file, index) => {
+                selectedFilesForUpload.add(index); // 기본적으로 모든 파일 선택
+                
+                const fileItem = document.createElement('div');
+                fileItem.style.cssText = `
+                    display: flex; 
+                    align-items: center; 
+                    padding: 8px 12px; 
+                    margin-bottom: 6px; 
+                    background: white; 
+                    border: 1px solid #dee2e6; 
+                    border-radius: 6px;
+                    transition: all 0.2s ease;
+                `;
+                
+                fileItem.innerHTML = `
+                    <input type="checkbox" id="file-${index}" checked style="margin-right: 10px;">
+                    <label for="file-${index}" style="flex: 1; margin: 0; cursor: pointer; font-size: 0.9rem;">
+                        📄 ${file.name}
+                    </label>
+                    <span style="font-size: 0.8rem; color: #6c757d;">
+                        ${(file.size / 1024 / 1024).toFixed(2)} MB
+                    </span>
+                `;
+                
+                const checkbox = fileItem.querySelector(`#file-${index}`);
+                checkbox.addEventListener('change', () => {
+                    if (checkbox.checked) {
+                        selectedFilesForUpload.add(index);
+                        fileItem.style.backgroundColor = 'white';
+                    } else {
+                        selectedFilesForUpload.delete(index);
+                        fileItem.style.backgroundColor = '#f8f9fa';
+                    }
+                    updateSelectedCount();
+                });
+                
+                filesList.appendChild(fileItem);
+            });
+            
+            updateSelectedCount();
+        }
+        
+        // 선택된 파일 개수 업데이트
+        function updateSelectedCount() {
+            const selectedCount = document.getElementById('selected-count');
+            const submitBtn = document.getElementById('upload-submit-btn');
+            
+            selectedCount.textContent = `${selectedFilesForUpload.size}개 파일 선택됨`;
+            submitBtn.disabled = selectedFilesForUpload.size === 0;
+            
+            if (selectedFilesForUpload.size === 0) {
+                submitBtn.style.opacity = '0.5';
+                submitBtn.style.cursor = 'not-allowed';
+            } else {
+                submitBtn.style.opacity = '1';
+                submitBtn.style.cursor = 'pointer';
+            }
+        }
+        
+        // 전체 선택/해제 버튼
+        document.getElementById('select-all-btn').addEventListener('click', () => {
+            const checkboxes = document.querySelectorAll('#selected-files-list input[type="checkbox"]');
+            checkboxes.forEach((checkbox, index) => {
+                checkbox.checked = true;
+                selectedFilesForUpload.add(index);
+                checkbox.closest('div').style.backgroundColor = 'white';
+            });
+            updateSelectedCount();
+        });
+        
+        document.getElementById('deselect-all-btn').addEventListener('click', () => {
+            const checkboxes = document.querySelectorAll('#selected-files-list input[type="checkbox"]');
+            checkboxes.forEach((checkbox, index) => {
+                checkbox.checked = false;
+                selectedFilesForUpload.delete(index);
+                checkbox.closest('div').style.backgroundColor = '#f8f9fa';
+            });
+            updateSelectedCount();
+        });
+
         uploadForm.addEventListener('submit', async (event) => {
             event.preventDefault();
-            uploadStatus.textContent = '파일을 업로드하고 처리 중입니다...';
+            
+            // 파일 업로드 시작 시 management 메시지 클리어
+            if (typeof clearManagementStatus === 'function') {
+                clearManagementStatus();
+            }
+            
+            uploadStatus.textContent = '선택된 파일을 업로드하고 처리 중입니다...';
+            
+            const allFiles = Array.from(pdfFile.files);
+            const selectedFiles = allFiles.filter((file, index) => selectedFilesForUpload.has(index));
+            
+            if (selectedFiles.length === 0) {
+                uploadStatus.textContent = '처리할 파일을 선택하세요.';
+                return;
+            }
+            
             const formData = new FormData();
-            formData.append('file', pdfFile.files[0]);
-
+            for (const f of selectedFiles) {
+                formData.append('files', f);
+            }
+            // Include OCR correction flag from dashboard toggle
+            const ocrToggle = document.getElementById('ocr-correction-toggle');
+            formData.append('ocr_correction_enabled', ocrToggle.checked);
+            
+            // Include LLM correction flag from dashboard toggle
+            const llmToggle = document.getElementById('llm-correction-toggle');
+            formData.append('llm_correction_enabled', llmToggle.checked);
             try {
                 const response = await fetch('/api/upload_pdf/', {
                     method: 'POST',
@@ -115,16 +358,59 @@
                 });
                 const result = await response.json();
                 if (response.ok) {
-                    uploadStatus.textContent = `성공: ${result.message || result.filename}`;
-                    if(result.document_id) {
-                        startProgressPolling(result.document_id);
+                    if (result.results && Array.isArray(result.results)) {
+                        const successfulUploads = [];
+                        const errorUploads = [];
+                        
+                        for (const r of result.results) {
+                            if (r.error) {
+                                errorUploads.push({filename: r.filename || '파일 없음', error: r.error});
+                            } else {
+                                if(r.document_id) {
+                                    successfulUploads.push({
+                                        documentId: r.document_id,
+                                        filename: r.filename
+                                    });
+                                }
+                            }
+                        }
+                        
+                        // 오류가 있는 경우만 메시지 표시
+                        if (errorUploads.length > 0) {
+                            let errorMsg = '';
+                            errorUploads.forEach(error => {
+                                errorMsg += `❌ ${error.filename}: ${error.error}\n`;
+                            });
+                            uploadStatus.textContent = errorMsg.trim();
+                            uploadStatus.className = 'status-message status-error';
+                        } else {
+                            // 성공한 경우 간단한 메시지만
+                            uploadStatus.textContent = `${successfulUploads.length}개 파일 업로드 시작됨`;
+                            uploadStatus.className = 'status-message status-success';
+                        }
+                        
+                        // 다중 파일 진행률 추적 시작
+                        if (successfulUploads.length > 0) {
+                            startMultiFileProgressTracking(successfulUploads);
+                            
+                            // 성공 메시지를 3초 후 자동으로 숨김
+                            setTimeout(() => {
+                                uploadStatus.textContent = '';
+                                uploadStatus.className = 'status-message';
+                            }, 3000);
+                        }
+                        
                         // 문서 목록 새로고침
                         setTimeout(() => {
                             fetchDocumentList();
                         }, 2000);
+                    } else {
+                        uploadStatus.textContent = '알 수 없는 응답 형식';
+                        uploadStatus.className = 'status-message status-error';
                     }
                 } else {
                     uploadStatus.textContent = `오류: ${result.error || '알 수 없는 오류'}`;
+                    uploadStatus.className = 'status-message status-error';
                 }
             } catch (error) {
                 uploadStatus.textContent = `네트워크 오류: ${error.message}`;
@@ -140,6 +426,9 @@
             
             // Show progress indicator
             showChatProgress();
+            
+            // 모델 활동 상태를 '처리중'으로 변경
+            updateModelActivity('processing');
             
             // Disable send button
             sendButton.disabled = true;
@@ -191,6 +480,9 @@
                 hideChatProgress();
                 sendButton.disabled = false;
                 sendButton.innerHTML = '💬 전송';
+                
+                // 모델 활동 상태를 '대기중'으로 복귀
+                updateModelActivity('idle');
             }
         }
 
@@ -421,14 +713,50 @@
                 const res = await fetch('/api/ollama/models');
                 const data = await res.json();
                 const select = document.getElementById('ollama-models');
+                
+                // 현재 선택된 모델 저장 (있다면)
+                const currentSelected = select.value;
+                
                 select.innerHTML = '';
                 if (data.models && data.models.length > 0) {
-                    data.models.forEach(model => {
+                    let gemma3Found = false;
+                    let defaultModel = null;
+                    
+                    data.models.forEach((model, index) => {
                         const opt = document.createElement('option');
                         opt.value = model;
-                        opt.textContent = model;
+                        opt.textContent = formatModelName(model);
                         select.appendChild(opt);
+                        
+                        // Gemma3 모델 찾기 (gemma2나 gemma로 시작하는 모델 우선 선택)
+                        if (!gemma3Found && (model.toLowerCase().includes('gemma2') || model.toLowerCase().includes('gemma'))) {
+                            gemma3Found = true;
+                            defaultModel = model;
+                        }
+                        
+                        // 첫 번째 모델을 백업으로 저장
+                        if (!defaultModel) {
+                            defaultModel = model;
+                        }
+                        
+                        // 이전에 선택된 모델이 있으면 그것을 선택
+                        if (currentSelected && model === currentSelected) {
+                            opt.selected = true;
+                        }
                     });
+                    
+                    // 이전 선택이 없으면 Gemma 모델 또는 첫 번째 모델 선택
+                    if (!currentSelected && defaultModel) {
+                        select.value = defaultModel;
+                        // 해당 옵션을 선택 상태로 만들기
+                        const targetOption = select.querySelector(`option[value="${defaultModel}"]`);
+                        if (targetOption) {
+                            targetOption.selected = true;
+                        }
+                    }
+                    
+                    // 현재 선택된 모델 표시 업데이트
+                    updateSelectedModelDisplay();
                 } else {
                     const opt = document.createElement('option');
                     opt.value = '';
@@ -448,8 +776,244 @@
             const select = document.getElementById('ollama-models');
             return select.value;
         }
-        // 페이지 로드 시 Ollama 상태/모델 목록 불러오기
-        window.addEventListener('DOMContentLoaded', fetchOllamaStatusAndModels);
+        
+        // 모델명 간단하게 포맷
+        function formatModelName(fullModelName) {
+            if (!fullModelName) return fullModelName;
+            
+            // 일반적인 패턴들 처리
+            const patterns = [
+                // llama2:7b -> Llama2 (7B)
+                { regex: /^(\w+):(\d+\.?\d*b?)$/i, format: (match) => `${capitalize(match[1])} (${match[2].toUpperCase()})` },
+                // qwen2:1.5b -> Qwen2 (1.5B)
+                { regex: /^(\w+\d*):(\d+\.?\d*b?)$/i, format: (match) => `${capitalize(match[1])} (${match[2].toUpperCase()})` },
+                // gemma:2b-instruct -> Gemma (2B-Instruct)
+                { regex: /^(\w+):(\d+\.?\d*b?-?\w*)$/i, format: (match) => `${capitalize(match[1])} (${match[2].toUpperCase()})` },
+                // llama2:latest -> Llama2 (Latest)
+                { regex: /^(\w+):latest$/i, format: (match) => `${capitalize(match[1])} (Latest)` },
+                // codellama:13b-code -> CodeLlama (13B-Code)
+                { regex: /^(\w+):(\d+\.?\d*b?-?\w*)$/i, format: (match) => `${capitalize(match[1])} (${match[2].toUpperCase()})` },
+            ];
+            
+            for (const pattern of patterns) {
+                const match = fullModelName.match(pattern.regex);
+                if (match) {
+                    return pattern.format(match);
+                }
+            }
+            
+            // 매칭되지 않는 경우 첫 번째 부분만 사용하거나 전체 이름 사용
+            if (fullModelName.includes(':')) {
+                const parts = fullModelName.split(':');
+                return `${capitalize(parts[0])} (${parts[1]})`;
+            }
+            
+            return capitalize(fullModelName);
+        }
+        
+        // 첫 글자를 대문자로 변환
+        function capitalize(str) {
+            if (!str) return str;
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+        
+        // 현재 선택된 모델 표시 업데이트
+        function updateSelectedModelDisplay() {
+            const select = document.getElementById('ollama-models');
+            const selectedModel = select.value;
+            
+            if (selectedModel) {
+                select.style.color = '#495057';
+                select.style.fontWeight = '500';
+                
+                // 모델 정보 업데이트
+                updateModelInfo(selectedModel);
+            }
+        }
+        
+        // 모델 정보 업데이트 (개선된 버전)
+        function updateModelInfo(modelName) {
+            const modelInfoEl = document.getElementById('model-info');
+            const activityEl = document.getElementById('model-activity');
+            
+            if (!modelName) {
+                modelInfoEl.textContent = '모델 선택되지 않음';
+                activityEl.style.display = 'none';
+                return;
+            }
+            
+            // 모델 상세 정보 추정
+            const modelInfo = getModelInfo(modelName);
+            modelInfoEl.innerHTML = `
+                <div style="line-height: 1.3;">
+                    <div style="font-weight: 600; color: #2c3e50; font-size: 0.9em;">
+                        ${modelInfo.vendor} • ${modelInfo.size}
+                    </div>
+                    <div style="font-size: 0.75em; color: #6c757d;">
+                        ${modelInfo.type} • ${modelInfo.language}
+                    </div>
+                </div>
+            `;
+            
+            // 작동 상태 표시
+            activityEl.style.display = 'flex';
+            updateModelActivity('idle');
+        }
+        
+        // 모델 정보 추정 (개선된 버전)
+        function getModelInfo(modelName) {
+            const name = modelName.toLowerCase();
+            
+            // 제작사 추정
+            let vendor = 'Unknown';
+            if (name.includes('llama')) vendor = 'Meta';
+            else if (name.includes('gemma')) vendor = 'Google';
+            else if (name.includes('qwen')) vendor = 'Alibaba';
+            else if (name.includes('mistral')) vendor = 'Mistral AI';
+            else if (name.includes('phi')) vendor = 'Microsoft';
+            else if (name.includes('codellama')) vendor = 'Meta';
+            else if (name.includes('vicuna')) vendor = 'LMSYS';
+            else if (name.includes('alpaca')) vendor = 'Stanford';
+            else if (name.includes('wizardlm')) vendor = 'WizardLM';
+            else if (name.includes('nous')) vendor = 'Nous Research';
+            
+            // 크기 추정
+            let size = '크기 불명';
+            if (name.includes('0.5b')) size = '0.5B';
+            else if (name.includes('1b')) size = '1B';
+            else if (name.includes('1.5b')) size = '1.5B';
+            else if (name.includes('2b')) size = '2B';
+            else if (name.includes('3b')) size = '3B';
+            else if (name.includes('7b')) size = '7B';
+            else if (name.includes('8b')) size = '8B';
+            else if (name.includes('9b')) size = '9B';
+            else if (name.includes('13b')) size = '13B';
+            else if (name.includes('14b')) size = '14B';
+            else if (name.includes('20b')) size = '20B';
+            else if (name.includes('30b') || name.includes('33b')) size = '30B+';
+            else if (name.includes('70b')) size = '70B';
+            else if (name.includes('180b')) size = '180B';
+            
+            // 타입 추정
+            let type = '일반형';
+            if (name.includes('instruct')) type = '지시 특화';
+            else if (name.includes('chat')) type = '대화 특화';
+            else if (name.includes('code')) type = '코딩 특화';
+            else if (name.includes('vision')) type = '비전 모델';
+            else if (name.includes('math')) type = '수학 특화';
+            else if (name.includes('reasoning')) type = '추론 특화';
+            
+            // 언어 지원 추정
+            let language = '다국어';
+            if (name.includes('ko') || name.includes('korean')) language = '한국어 특화';
+            else if (name.includes('en') || name.includes('english')) language = '영어 특화';
+            else if (name.includes('zh') || name.includes('chinese')) language = '중국어 특화';
+            else if (name.includes('jp') || name.includes('japanese')) language = '일본어 특화';
+            
+            return { vendor, size, type, language };
+        }
+        
+        // 모델 활동 상태 업데이트
+        function updateModelActivity(status, progress = 0) {
+            const gauge = document.getElementById('activity-gauge');
+            const text = document.getElementById('activity-text');
+            
+            if (!gauge || !text) return;
+            
+            switch(status) {
+                case 'idle':
+                    gauge.style.background = 'conic-gradient(#6c757d 0deg, #e9ecef 0deg)';
+                    text.textContent = '대기중';
+                    text.style.color = '#6c757d';
+                    break;
+                case 'active':
+                    const angle = (progress / 100) * 360;
+                    gauge.style.background = `conic-gradient(#28a745 ${angle}deg, #e9ecef ${angle}deg)`;
+                    text.textContent = '활성';
+                    text.style.color = '#28a745';
+                    break;
+                case 'processing':
+                    gauge.style.background = 'conic-gradient(#007bff 0deg, #007bff 90deg, #e9ecef 90deg, #e9ecef 180deg, #007bff 180deg, #007bff 270deg, #e9ecef 270deg)';
+                    gauge.style.animation = 'spin 1s linear infinite';
+                    text.textContent = '처리중';
+                    text.style.color = '#007bff';
+                    break;
+                case 'error':
+                    gauge.style.background = 'conic-gradient(#dc3545 0deg, #e9ecef 0deg)';
+                    gauge.style.animation = 'none';
+                    text.textContent = '오류';
+                    text.style.color = '#dc3545';
+                    break;
+            }
+        }
+        
+        // 시스템 통계 업데이트
+        async function updateSystemStats() {
+            try {
+                // 문서 목록 가져오기
+                const docsRes = await fetch('/api/documents');
+                const docsData = await docsRes.json();
+                
+                // 저장소 통계 가져오기
+                const statsRes = await fetch('/api/storage/stats');
+                const statsData = await statsRes.json();
+                
+                // UI 업데이트
+                const docCount = docsData.documents ? docsData.documents.length : 0;
+                const totalChunks = docsData.documents ? 
+                    docsData.documents.reduce((sum, doc) => sum + (doc.chunk_count || 0), 0) : 0;
+                
+                document.getElementById('doc-count').textContent = docCount;
+                document.getElementById('chunk-count').textContent = totalChunks;
+                
+                if (statsRes.ok && statsData.file_storage) {
+                    const sizeMB = Math.round(statsData.file_storage.total_size_mb || 0);
+                    document.getElementById('storage-size').textContent = `${sizeMB}MB`;
+                }
+                
+                // 마지막 업데이트 시간
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('ko-KR', { 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                });
+                document.getElementById('last-update').textContent = timeStr;
+                
+            } catch (error) {
+                console.error('시스템 통계 업데이트 실패:', error);
+            }
+        }
+        
+        // 빠른 설정 토글 이벤트
+        function setupQuickSettings() {
+            // OCR 교정 토글
+            const ocrToggle = document.getElementById('ocr-correction-toggle');
+            ocrToggle.addEventListener('change', (e) => {
+                console.log('OCR 교정:', e.target.checked ? '활성화' : '비활성화');
+                // 실제 설정 변경 로직은 여기에 구현
+            });
+            
+            // LLM 교정 토글
+            const llmToggle = document.getElementById('llm-correction-toggle');
+            llmToggle.addEventListener('change', (e) => {
+                console.log('LLM 교정:', e.target.checked ? '활성화' : '비활성화');
+                // 실제 설정 변경 로직은 여기에 구현
+            });
+            
+            // 자동 새로고침 토글
+            const autoRefreshToggle = document.getElementById('auto-refresh-toggle');
+            autoRefreshToggle.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    startDocumentListPolling();
+                    updateAutoRefreshIndicator('활성화');
+                } else {
+                    stopDocumentListPolling();
+                    updateAutoRefreshIndicator('비활성화');
+                }
+            });
+        }
+        
+        // 페이지 로드 시 Ollama 상태/모델 목록 불러오기는 아래 DOMContentLoaded에서 처리
 
         // 프로그레스바 단계별 매핑
         const progressSteps = [
@@ -460,7 +1024,531 @@
             { step: 'Done', percent: 100 },
             { step: 'Error', percent: 100 },
         ];
-        let progressInterval = null;
+        
+        // 다중 파일 진행률 추적 변수들
+        let multiFileTracking = {
+            files: new Map(), // documentId -> {filename, status, interval}
+            intervals: new Set(),
+            hideTimeout: null
+        };
+        
+        // 다중 파일 진행률 추적 시작
+        function startMultiFileProgressTracking(files) {
+            console.log('다중 파일 진행률 추적 시작:', files);
+            
+            // 진행률 컨테이너 표시
+            const progressContainer = document.getElementById('progress-container');
+            progressContainer.style.display = 'block';
+            
+            // 기존 데이터 정리
+            clearMultiFileTracking();
+            
+            // 전체 진행률 초기화
+            updateOverallProgress(0, files.length);
+            
+            // 개별 파일 진행률 UI 생성 및 추적 시작
+            files.forEach(file => {
+                createIndividualProgressUI(file.documentId, file.filename);
+                startIndividualFileTracking(file.documentId, file.filename);
+            });
+        }
+        
+        // 개별 파일 진행률 UI 생성 (동적 스타일)
+        function createIndividualProgressUI(documentId, filename) {
+            const container = document.getElementById('individual-progress-container');
+            
+            const fileDiv = document.createElement('div');
+            fileDiv.id = `progress-${documentId}`;
+            fileDiv.className = 'file-progress-card';
+            fileDiv.style.cssText = `
+                margin-bottom: 15px; 
+                padding: 15px; 
+                border: 1px solid #dee2e6; 
+                border-radius: 12px; 
+                background: white;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                transition: all 0.3s ease;
+            `;
+            
+            fileDiv.innerHTML = `
+                <!-- 파일 헤더 -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div id="file-icon-${documentId}" style="font-size: 1.2em;">📄</div>
+                        <span style="font-weight: 600; color: #2c3e50; font-size: 1rem;">문서 처리 중...</span>
+                    </div>
+                    <div id="status-badge-${documentId}" class="status-badge status-waiting">
+                        <span id="status-text-${documentId}">대기 중</span>
+                    </div>
+                </div>
+                
+                <!-- 처리 단계 표시 (동적) -->
+                <div id="process-steps-${documentId}" class="process-steps-dynamic">
+                    <!-- 현재 처리 중인 단계만 표시됩니다 -->
+                </div>
+                
+                <!-- 진행률 바 (전체) -->
+                <div style="margin-top: 10px;">
+                    <div style="height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden;">
+                        <div id="progress-bar-${documentId}" style="height: 100%; width: 0%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); transition: width 0.3s ease;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-top: 5px; font-size: 0.85em; color: #6c757d;">
+                        <span id="progress-text-${documentId}">0%</span>
+                        <span id="time-info-${documentId}"></span>
+                    </div>
+                </div>
+            `;
+            
+            container.appendChild(fileDiv);
+        }
+        
+        // 개별 파일 진행률 추적
+        function startIndividualFileTracking(documentId, filename) {
+            const interval = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/upload_status/${documentId}`);
+                    const data = await res.json();
+                    
+                    updateIndividualProgress(documentId, data);
+                    
+                    // 파일 상태 업데이트 - 백엔드 percent 값 우선 사용
+                    const actualPercent = data.percent !== undefined ? data.percent : (progressSteps.find(s => s.step === data.step) || { percent: 0 }).percent;
+                    multiFileTracking.files.set(documentId, {
+                        filename,
+                        status: data.step,
+                        progress: actualPercent,
+                        completed: data.step === 'Done' || data.step === 'Error'
+                    });
+                    
+                    // 전체 진행률 업데이트 (실시간)
+                    updateOverallProgressFromFiles();
+                    
+                    if (data.step === 'Done' || data.step === 'Error') {
+                        clearInterval(interval);
+                        multiFileTracking.intervals.delete(interval);
+                        checkAllFilesCompleted();
+                    }
+                } catch (error) {
+                    console.error(`진행률 추적 오류 (${documentId}):`, error);
+                    document.getElementById(`message-${documentId}`).textContent = '상태 확인 실패';
+                }
+            }, 1500);
+            
+            multiFileTracking.intervals.add(interval);
+            multiFileTracking.files.set(documentId, {
+                filename,
+                status: 'processing',
+                interval,
+                completed: false
+            });
+        }
+        
+        // 개별 파일 진행률 업데이트 (동적 스타일)
+        function updateIndividualProgress(documentId, data) {
+            // 백엔드 percent 값을 우선 사용, 없으면 기본 단계별 값 사용
+            const percent = data.percent !== undefined ? data.percent : (progressSteps.find(s => s.step === data.step) || { percent: 0 }).percent;
+            
+            // 메인 UI 요소들
+            const fileCard = document.getElementById(`progress-${documentId}`);
+            const progressBar = document.getElementById(`progress-bar-${documentId}`);
+            const statusBadge = document.getElementById(`status-badge-${documentId}`);
+            const statusText = document.getElementById(`status-text-${documentId}`);
+            const progressText = document.getElementById(`progress-text-${documentId}`);
+            const timeInfo = document.getElementById(`time-info-${documentId}`);
+            const fileIcon = document.getElementById(`file-icon-${documentId}`);
+            
+            // 진행률 바 업데이트 (실제 percent 값 사용, 0-100 범위 제한)
+            const displayPercent = Math.max(0, Math.min(100, Math.round(percent)));
+            if (progressBar) progressBar.style.width = displayPercent + '%';
+            if (progressText) {
+                // 페이지 정보가 있으면 추가 표시
+                if (data.current_page && data.total_pages) {
+                    progressText.textContent = `${displayPercent}% (${data.current_page}/${data.total_pages} 페이지)`;
+                } else {
+                    progressText.textContent = `${displayPercent}%`;
+                }
+            }
+            
+            // multiFileTracking의 파일 정보도 실시간으로 업데이트
+            if (multiFileTracking.files.has(documentId)) {
+                const fileInfo = multiFileTracking.files.get(documentId);
+                fileInfo.progress = displayPercent;
+                fileInfo.status = data.step;
+                fileInfo.completed = data.step === 'Done' || data.step === 'Error';
+                multiFileTracking.files.set(documentId, fileInfo);
+            }
+            
+            // 프로세스 단계 업데이트 (상세 정보 포함)
+            updateProcessSteps(documentId, data.step, data);
+            
+            if (data.step === 'Done') {
+                // 완료 상태
+                if (fileCard) {
+                    fileCard.className = 'file-progress-card completed';
+                }
+                if (statusBadge) {
+                    statusBadge.className = 'status-badge status-completed';
+                }
+                if (statusText) statusText.textContent = '완료';
+                if (fileIcon) fileIcon.textContent = '✅';
+                if (progressBar) {
+                    progressBar.style.background = 'linear-gradient(90deg, #28a745 0%, #20c997 100%)';
+                    progressBar.style.width = '100%';
+                }
+                if (progressText) progressText.textContent = '100%';
+                if (timeInfo) timeInfo.textContent = '완료됨';
+                
+            } else if (data.step === 'Error') {
+                // 오류 상태
+                if (fileCard) {
+                    fileCard.className = 'file-progress-card error';
+                }
+                if (statusBadge) {
+                    statusBadge.className = 'status-badge status-error';
+                }
+                if (statusText) statusText.textContent = '오류';
+                if (fileIcon) fileIcon.textContent = '❌';
+                if (progressBar) {
+                    progressBar.style.background = 'linear-gradient(90deg, #dc3545 0%, #e74c3c 100%)';
+                }
+                if (timeInfo) timeInfo.textContent = '오류 발생';
+                
+            } else {
+                // 처리 중 상태
+                if (fileCard) {
+                    fileCard.className = 'file-progress-card processing';
+                }
+                if (statusBadge) {
+                    statusBadge.className = 'status-badge status-processing';
+                }
+                if (statusText) statusText.textContent = '처리 중';
+                if (fileIcon) fileIcon.textContent = '⚙️';
+                if (timeInfo) {
+                    const now = new Date();
+                    timeInfo.textContent = now.toLocaleTimeString('ko-KR', { 
+                        hour: '2-digit', 
+                        minute: '2-digit', 
+                        second: '2-digit' 
+                    });
+                }
+            }
+        }
+        
+        // 프로세스 단계 시각화 업데이트 (동적 방식)
+        function updateProcessSteps(documentId, currentStep, data = {}) {
+            const processStepsContainer = document.getElementById(`process-steps-${documentId}`);
+            if (!processStepsContainer) return;
+            
+            // 상세한 단계별 표시 정보
+            let stepText = '';
+            let stepIcon = '';
+            
+            switch(currentStep) {
+                case 'Analyzing':
+                    stepIcon = '🔍';
+                    stepText = `PDF 파일 분석 중... ${data.total_pages ? `(${data.total_pages}페이지)` : ''}`;
+                    break;
+                case 'OCR':
+                    stepIcon = '👁️';
+                    if (data.current_page && data.total_pages) {
+                        const details = data.details || {};
+                        const stage = details.stage || '';
+                        let stageText = '';
+                        if (stage === 'text') stageText = '텍스트 추출';
+                        else if (stage === 'images') stageText = '이미지 추출';
+                        else if (stage === 'tables') stageText = '표 추출';
+                        
+                        stepText = `${stageText} 중... (${data.current_page}/${data.total_pages} 페이지)`;
+                    } else if (data.message) {
+                        stepText = data.message;
+                    } else {
+                        stepText = 'OCR 처리 중...';
+                    }
+                    break;
+                case 'Chunking':
+                    stepIcon = '📝';
+                    if (data.details && data.details.text_length) {
+                        stepText = `텍스트 분할 중... (${data.details.text_length.toLocaleString()}자)`;
+                    } else if (data.message) {
+                        stepText = data.message;
+                    } else {
+                        stepText = '텍스트 청크 분할 중...';
+                    }
+                    break;
+                case 'Embedding':
+                    stepIcon = '🧠';
+                    if (data.details && data.details.chunks_to_process) {
+                        stepText = `임베딩 생성 중... (${data.details.chunks_to_process}개 청크)`;
+                    } else if (data.message) {
+                        stepText = data.message;
+                    } else {
+                        stepText = '벡터 임베딩 생성 중...';
+                    }
+                    break;
+                case 'Storing':
+                    stepIcon = '💾';
+                    if (data.details) {
+                        const details = data.details;
+                        const parts = [];
+                        if (details.texts) parts.push(`텍스트 ${details.texts}개`);
+                        if (details.images) parts.push(`이미지 ${details.images}개`);
+                        if (details.tables) parts.push(`표 ${details.tables}개`);
+                        stepText = `데이터베이스 저장 중... (${parts.join(', ')})`;
+                    } else if (data.message) {
+                        stepText = data.message;
+                    } else {
+                        stepText = '데이터베이스에 저장 중...';
+                    }
+                    break;
+                case 'Done':
+                    stepIcon = '✅';
+                    if (data.details) {
+                        const details = data.details;
+                        stepText = `처리 완료! (${details.total_pages || 0}페이지, ${details.text_chunks || 0}청크, ${details.images || 0}이미지, ${details.tables || 0}표)`;
+                    } else if (data.message) {
+                        stepText = data.message;
+                    } else {
+                        stepText = '모든 처리가 완료되었습니다!';
+                    }
+                    break;
+                case 'Error':
+                    stepIcon = '❌';
+                    stepText = data.message || '처리 중 오류가 발생했습니다.';
+                    break;
+                default:
+                    stepIcon = '⏳';
+                    stepText = data.message || '준비 중...';
+            }
+            
+            // 상태별 CSS 클래스 결정
+            let statusClass = 'waiting';
+            if (currentStep === 'Done') {
+                statusClass = 'completed';
+            } else if (currentStep === 'Error') {
+                statusClass = 'error';
+            } else if (['Analyzing', 'OCR', 'Chunking', 'Embedding', 'Storing'].includes(currentStep)) {
+                statusClass = 'processing';
+            }
+            
+            // 타임스탬프 추가 (옵션)
+            const timestamp = data.timestamp ? new Date(data.timestamp).toLocaleTimeString('ko-KR', {
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            }) : '';
+            
+            // 동적으로 현재 단계 표시 (더 상세한 정보 포함)
+            processStepsContainer.innerHTML = `
+                <div class="current-step-display ${statusClass}">
+                    <div class="step-header">
+                        <div class="step-icon ${statusClass}">${stepIcon}</div>
+                        <div class="step-text">
+                            <div class="main-text">${stepText}</div>
+                            ${timestamp ? `<div class="timestamp">${timestamp}</div>` : ''}
+                        </div>
+                    </div>
+                    ${data.details && Object.keys(data.details).length > 0 ? 
+                        `<div class="step-details">
+                            ${getFormattedDetails(data.details)}
+                        </div>` : ''
+                    }
+                </div>
+            `;
+        }
+        
+        // 상세 정보를 포맷팅하여 표시
+        function getFormattedDetails(details) {
+            const items = [];
+            
+            if (details.stage) {
+                const stageNames = {
+                    'text': '텍스트 추출',
+                    'images': '이미지 추출', 
+                    'tables': '표 추출'
+                };
+                items.push(`처리 단계: ${stageNames[details.stage] || details.stage}`);
+            }
+            
+            if (details.pages_processed !== undefined) {
+                items.push(`처리된 페이지: ${details.pages_processed}개`);
+            }
+            
+            if (details.text_length !== undefined) {
+                items.push(`텍스트 길이: ${details.text_length.toLocaleString()}자`);
+            }
+            
+            if (details.chunks_created !== undefined) {
+                items.push(`생성된 청크: ${details.chunks_created}개`);
+            }
+            
+            if (details.embeddings_created !== undefined) {
+                items.push(`생성된 임베딩: ${details.embeddings_created}개`);
+            }
+            
+            if (details.embedding_dimension !== undefined) {
+                items.push(`벡터 차원: ${details.embedding_dimension}차원`);
+            }
+            
+            return items.map(item => `<div class="detail-item">• ${item}</div>`).join('');
+        }
+        
+        // 사용자 친화적 메시지 생성
+        function getFriendlyMessage(step, originalMessage) {
+            const friendlyMessages = {
+                'OCR': '👁️ OCR로 텍스트를 추출하고 있습니다...',
+                'Chunking': '📝 텍스트를 청크로 분할하고 있습니다...',
+                'Embedding': '🧠 임베딩 벡터를 생성하고 있습니다...',
+                'Storing': '💾 데이터베이스에 저장하고 있습니다...',
+                'Done': '✅ 모든 처리가 완료되었습니다!'
+            };
+            
+            return friendlyMessages[step] || originalMessage || '처리 중입니다...';
+        }
+        
+        // 전체 진행률 업데이트 (완료 개수 기반)
+        function updateOverallProgress(completedCount, totalCount) {
+            const progressBar = document.getElementById('overall-progress-bar');
+            const countSpan = document.getElementById('overall-progress-count');
+            const textSpan = document.getElementById('overall-progress-text');
+            
+            const percentage = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+            
+            if (progressBar) progressBar.style.width = percentage + '%';
+            if (countSpan) countSpan.textContent = `${completedCount}/${totalCount} 완료`;
+            if (textSpan) {
+                if (completedCount === totalCount && totalCount > 0) {
+                    textSpan.textContent = '✅ 모든 파일 처리 완료';
+                    progressBar.style.background = '#28a745';
+                } else {
+                    textSpan.textContent = '전체 진행률';
+                    progressBar.style.background = '#28a745';
+                }
+            }
+        }
+        
+        // 개별 파일 진행률 기반 전체 진행률 업데이트 (실시간)
+        function updateOverallProgressFromFiles() {
+            const progressBar = document.getElementById('overall-progress-bar');
+            const countSpan = document.getElementById('overall-progress-count');
+            const textSpan = document.getElementById('overall-progress-text');
+            
+            const files = Array.from(multiFileTracking.files.values());
+            if (files.length === 0) return;
+            
+            // 개별 파일 진행률의 가중 평균 계산 (실제 진행률 반영)
+            const totalProgress = files.reduce((sum, file) => {
+                // progress 값이 유효한지 확인하고 0-100 범위로 제한
+                const fileProgress = Math.max(0, Math.min(100, file.progress || 0));
+                return sum + fileProgress;
+            }, 0);
+            const averageProgress = Math.round(totalProgress / files.length);
+            
+            // 완료된 파일 개수
+            const completedFiles = files.filter(f => f.completed);
+            const completedCount = completedFiles.length;
+            const totalCount = files.length;
+            
+            // 진행률 바 업데이트 (평균 진행률 기반, 완료 상태 고려)
+            let displayProgress = averageProgress;
+            
+            // 모든 파일이 완료되면 100%로 설정
+            if (completedCount === totalCount && totalCount > 0) {
+                displayProgress = 100;
+            }
+            
+            if (progressBar) progressBar.style.width = displayProgress + '%';
+            if (countSpan) countSpan.textContent = `${completedCount}/${totalCount} 완료`;
+            if (textSpan) {
+                if (completedCount === totalCount && totalCount > 0) {
+                    textSpan.textContent = '✅ 모든 파일 처리 완료';
+                    if (progressBar) progressBar.style.background = '#28a745';
+                } else {
+                    textSpan.textContent = `전체 진행률 (${displayProgress}%)`;
+                    if (progressBar) progressBar.style.background = '#007bff';
+                }
+            }
+            
+            // 디버깅 로그 (개발 시에만 사용)
+            console.log(`전체 진행률 업데이트: ${displayProgress}% (완료: ${completedCount}/${totalCount})`);
+        }
+        
+        // 모든 파일 완료 확인
+        function checkAllFilesCompleted() {
+            const files = Array.from(multiFileTracking.files.values());
+            const completedFiles = files.filter(f => f.completed);
+            const totalFiles = files.length;
+            
+            updateOverallProgress(completedFiles.length, totalFiles);
+            
+            if (completedFiles.length === totalFiles && totalFiles > 0) {
+                console.log('모든 파일 처리 완료!');
+                
+                // 문서 목록 새로고침
+                setTimeout(() => {
+                    fetchDocumentList();
+                    console.log('모든 파일 처리 완료: 문서 목록 자동 새로고침');
+                }, 1000);
+                
+                // 자동 숨김 설정 확인
+                const autoHide = document.getElementById('auto-hide-progress');
+                if (autoHide && autoHide.checked) {
+                    scheduleProgressHide();
+                }
+            }
+        }
+        
+        // 진행률 창 자동 숨김 예약
+        function scheduleProgressHide() {
+            if (multiFileTracking.hideTimeout) {
+                clearTimeout(multiFileTracking.hideTimeout);
+            }
+            
+            multiFileTracking.hideTimeout = setTimeout(() => {
+                const progressContainer = document.getElementById('progress-container');
+                const selectedFilesContainer = document.getElementById('selected-files-container');
+                
+                if (progressContainer) {
+                    progressContainer.style.display = 'none';
+                    clearMultiFileTracking();
+                }
+                
+                // 선택된 파일 목록도 숨기고 초기화
+                if (selectedFilesContainer) {
+                    selectedFilesContainer.style.display = 'none';
+                    document.getElementById('selected-files-list').innerHTML = '';
+                    selectedFilesForUpload.clear();
+                    
+                    // 파일 입력 초기화
+                    const pdfFileInput = document.getElementById('pdf-file');
+                    if (pdfFileInput) {
+                        pdfFileInput.value = '';
+                    }
+                    
+                    // 업로드 버튼 상태 초기화
+                    updateSelectedCount();
+                }
+            }, 10000); // 10초 후 숨김
+        }
+        
+        // 다중 파일 추적 정리
+        function clearMultiFileTracking() {
+            // 모든 인터벌 정리
+            multiFileTracking.intervals.forEach(interval => clearInterval(interval));
+            multiFileTracking.intervals.clear();
+            
+            // 숨김 타이머 정리
+            if (multiFileTracking.hideTimeout) {
+                clearTimeout(multiFileTracking.hideTimeout);
+                multiFileTracking.hideTimeout = null;
+            }
+            
+            // 파일 데이터 정리
+            multiFileTracking.files.clear();
+            
+            // 개별 진행률 UI 정리
+            const container = document.getElementById('individual-progress-container');
+            if (container) container.innerHTML = '';
+        }
+        
+        // 기존 단일 파일 진행률 함수 (하위 호환성)
         function startProgressPolling(documentId) {
             const progressContainer = document.getElementById('progress-container');
             const progressBarInner = document.getElementById('progress-bar-inner');
@@ -479,6 +1567,11 @@
                     if(data.step === 'Done') {
                         progressMessage.textContent = '✅ ' + data.message;
                         clearInterval(progressInterval);
+                        // 처리 완료 시 문서 목록 자동 새로고침
+                        setTimeout(() => {
+                            fetchDocumentList();
+                            console.log('문서 처리 완료: 문서 목록 자동 새로고침');
+                        }, 1000);
                     } else if(data.step === 'Error') {
                         progressMessage.textContent = '❌ ' + data.message;
                         progressBarInner.style.background = '#dc3545';
@@ -496,28 +1589,36 @@
                 const res = await fetch('/api/documents');
                 const data = await res.json();
                 
-                // 채팅용 드롭다운 업데이트
-                const select = document.getElementById('document-select');
+                // 채팅용 문서 체크박스 업데이트
                 const info = document.getElementById('document-info');
-                select.innerHTML = '';
-                // 전체 문서 옵션 추가
-                const allOpt = document.createElement('option');
-                allOpt.value = '__ALL__';
-                allOpt.textContent = '전체 문서';
-                select.appendChild(allOpt);
-                
-                // 문서 관리 목록 업데이트
+                const selectAllCheckbox = document.getElementById('select-all-docs');
+                const container = document.getElementById('individual-doc-checkboxes');
                 const documentList = document.getElementById('document-list');
+                
+                if (!container || !documentList) {
+                    console.error('Required DOM elements not found');
+                    return;
+                }
+                
+                container.innerHTML = '';
                 documentList.innerHTML = '';
                 
+                // 기본 전체 문서 선택
+                if (selectAllCheckbox) {
+                    selectAllCheckbox.checked = true;
+                }
+                
+                // 개별 문서 체크박스 생성
                 if (data.documents && data.documents.length > 0) {
                     data.documents.forEach(doc => {
-                        // 채팅용 드롭다운
-                        const opt = document.createElement('option');
-                        opt.value = doc.document_id;
-                        opt.textContent = `${doc.document_id} (${doc.chunk_count}청크)`;
-                        opt.setAttribute('data-preview', doc.first_chunk_preview || '');
-                        select.appendChild(opt);
+                        // 채팅용 체크박스
+                        const div = document.createElement('div');
+                        div.style.marginBottom = '4px';
+                        div.innerHTML = `
+                            <input type="checkbox" id="doc-checkbox-${doc.document_id}" value="${doc.document_id}" data-preview="${doc.first_chunk_preview || ''}" disabled>
+                            <label for="doc-checkbox-${doc.document_id}">${doc.document_id} (${doc.chunk_count}청크)</label>
+                        `;
+                        container.appendChild(div);
                         
                         // 문서 관리 목록
                         const docDiv = document.createElement('div');
@@ -538,34 +1639,71 @@
                         `;
                         documentList.appendChild(docDiv);
                     });
-                    // 첫 문서 정보 표시
-                    info.textContent = data.documents[0].first_chunk_preview ? `미리보기: ${data.documents[0].first_chunk_preview.slice(0, 60)}...` : '';
-                } else {
-                    const opt = document.createElement('option');
-                    opt.value = '';
-                    opt.textContent = '저장된 문서 없음';
-                    select.appendChild(opt);
-                    info.textContent = '';
                     
+                    // 첫 문서 정보 표시
+                    if (info) {
+                        info.textContent = data.documents[0].first_chunk_preview ? 
+                            `미리보기: ${data.documents[0].first_chunk_preview.slice(0, 60)}...` : '';
+                    }
+                    
+                    // 폴링용 문서 개수 업데이트
+                    lastDocumentCount = data.documents.length;
+                } else {
+                    if (info) info.textContent = '';
                     documentList.innerHTML = '<div class="text-center text-muted">📭 저장된 문서가 없습니다.</div>';
+                    lastDocumentCount = 0;
                 }
+                
+                // 이벤트 핸들러 등록
+                if (selectAllCheckbox) {
+                    selectAllCheckbox.addEventListener('change', () => {
+                        const checked = selectAllCheckbox.checked;
+                        const boxes = container.querySelectorAll('input[type="checkbox"]');
+                        boxes.forEach(cb => { 
+                            cb.disabled = checked; 
+                            if (checked) cb.checked = false; 
+                        });
+                        updateChatPreview();
+                    });
+                }
+                
+                container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                    cb.addEventListener('change', updateChatPreview);
+                });
+                
             } catch (e) {
-                const select = document.getElementById('document-select');
-                select.innerHTML = '';
-                const opt = document.createElement('option');
-                opt.value = '';
-                opt.textContent = '문서 목록 불러오기 실패';
-                select.appendChild(opt);
-                document.getElementById('document-info').textContent = '';
-                document.getElementById('document-list').innerHTML = '<div class="status-message status-error">❌ 문서 목록 불러오기 실패</div>';
+                console.error('문서 목록 불러오기 실패:', e);
+                const documentList = document.getElementById('document-list');
+                if (documentList) {
+                    documentList.innerHTML = '<div class="status-message status-error">❌ 문서 목록 불러오기 실패</div>';
+                }
+                if (document.getElementById('document-info')) {
+                    document.getElementById('document-info').textContent = '';
+                }
             }
         }
+        // 챗봇용 문서 선택 미리보기 업데이트
+        function updateChatPreview() {
+            const info = document.getElementById('document-info');
+            const selectAll = document.getElementById('select-all-docs').checked;
+            if (selectAll) {
+                info.textContent = '';
+                return;
+            }
+            const checked = Array.from(
+                document.querySelectorAll('#individual-doc-checkboxes input[type="checkbox"]:checked')
+            );
+            const previews = checked.map(cb => cb.getAttribute('data-preview')).filter(Boolean);
+            info.textContent = previews.length > 0
+                ? `미리보기: ${previews.map(p => p.slice(0, 60)).join(' | ')}...`
+                : '';
+        }
+        // 선택된 문서 ID 배열 반환 (빈 배열은 전체 문서 의미)
         function getSelectedDocumentIds() {
-            const select = document.getElementById('document-select');
-            const values = Array.from(select.selectedOptions).map(opt => opt.value);
-            // 전체 문서 선택 시 빈 배열 반환(백엔드에서 전체 검색)
-            if (values.includes('__ALL__')) return [];
-            return values;
+            const selectAll = document.getElementById('select-all-docs').checked;
+            if (selectAll) return [];
+            const checked = document.querySelectorAll('#individual-doc-checkboxes input[type="checkbox"]:checked');
+            return Array.from(checked).map(cb => cb.value);
         }
 
         // 문서 관리 기능들
@@ -573,6 +1711,9 @@
             if (!confirm(`문서 "${documentId}"를 정말 삭제하시겠습니까?`)) {
                 return;
             }
+            
+            // 기존 메시지 클리어
+            clearManagementStatus();
             
             try {
                 const response = await fetch(`/api/documents/${documentId}`, {
@@ -585,6 +1726,11 @@
                     statusEl.textContent = `✅ 문서 "${documentId}" 삭제 완료`;
                     statusEl.className = 'status-message status-success';
                     fetchDocumentList(); // 목록 새로고침
+                    
+                    // 성공 메시지를 3초 후 자동으로 숨김
+                    setTimeout(() => {
+                        clearManagementStatus();
+                    }, 3000);
                 } else {
                     const statusEl = document.getElementById('management-status');
                     statusEl.textContent = `❌ 삭제 실패: ${result.detail}`;
@@ -597,10 +1743,20 @@
             }
         }
         
+        // 메시지 클리어 헬퍼 함수
+        function clearManagementStatus() {
+            const statusEl = document.getElementById('management-status');
+            statusEl.textContent = '';
+            statusEl.className = 'status-message';
+        }
+
         async function deleteAllDocuments() {
             if (!confirm('모든 문서를 정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
                 return;
             }
+            
+            // 기존 메시지 클리어
+            clearManagementStatus();
             
             try {
                 const response = await fetch('/api/documents', {
@@ -614,6 +1770,11 @@
                         `✅ 모든 문서 삭제 완료 (문서: ${result.deleted_documents_count}개, 파일: ${result.deleted_files_count}개)`;
                     statusEl.className = 'status-message status-success';
                     fetchDocumentList(); // 목록 새로고침
+                    
+                    // 성공 메시지를 5초 후 자동으로 숨김
+                    setTimeout(() => {
+                        clearManagementStatus();
+                    }, 5000);
                 } else {
                     const statusEl = document.getElementById('management-status');
                     statusEl.textContent = `❌ 삭제 실패: ${result.detail}`;
@@ -654,6 +1815,9 @@
                 return;
             }
             
+            // 기존 메시지 클리어
+            clearManagementStatus();
+            
             try {
                 const response = await fetch('/api/documents/cleanup', {
                     method: 'POST'
@@ -666,6 +1830,11 @@
                         `✅ 정리 완료: ${result.cleaned_files_count}개 파일 정리됨`;
                     statusEl.className = 'status-message status-success';
                     fetchDocumentList(); // 목록 새로고침
+                    
+                    // 성공 메시지를 4초 후 자동으로 숨김
+                    setTimeout(() => {
+                        clearManagementStatus();
+                    }, 4000);
                 } else {
                     const statusEl = document.getElementById('management-status');
                     statusEl.textContent = `❌ 정리 실패: ${result.detail}`;
@@ -678,10 +1847,84 @@
             }
         }
         
+        // 문서 목록 자동 새로고침 간격 (30초)
+        let documentListInterval = null;
+        let lastDocumentCount = 0;
+        
+        function startDocumentListPolling() {
+            // 기존 인터벌 정리
+            if (documentListInterval) {
+                clearInterval(documentListInterval);
+            }
+            
+            // 30초마다 문서 목록 확인
+            documentListInterval = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/documents');
+                    const data = await res.json();
+                    const currentDocumentCount = data.documents ? data.documents.length : 0;
+                    
+                    // 문서 개수가 변경되었으면 목록 새로고침
+                    if (currentDocumentCount !== lastDocumentCount) {
+                        console.log(`문서 개수 변경 감지: ${lastDocumentCount} → ${currentDocumentCount}`);
+                        fetchDocumentList();
+                        lastDocumentCount = currentDocumentCount;
+                        
+                        // 자동 새로고침 표시기 업데이트
+                        updateAutoRefreshIndicator('변경 감지됨');
+                    }
+                } catch (error) {
+                    console.log('문서 목록 폴링 오류:', error);
+                }
+            }, 30000); // 30초 간격
+        }
+        
+        function stopDocumentListPolling() {
+            if (documentListInterval) {
+                clearInterval(documentListInterval);
+                documentListInterval = null;
+            }
+        }
+        
+        function updateAutoRefreshIndicator(status) {
+            const indicator = document.getElementById('auto-refresh-indicator');
+            if (!indicator) return;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            
+            switch(status) {
+                case '변경 감지됨':
+                    indicator.innerHTML = `🔄 목록 업데이트됨 (${timestamp})`;
+                    indicator.style.color = '#28a745';
+                    setTimeout(() => {
+                        indicator.innerHTML = '🔄 자동 새로고침 활성화';
+                        indicator.style.color = '#28a745';
+                    }, 3000);
+                    break;
+                case '활성화':
+                    indicator.innerHTML = '🔄 자동 새로고침 활성화';
+                    indicator.style.color = '#28a745';
+                    break;
+                case '비활성화':
+                    indicator.innerHTML = '⏸️ 자동 새로고침 비활성화';
+                    indicator.style.color = '#6c757d';
+                    break;
+                default:
+                    indicator.innerHTML = `🔄 ${status}`;
+                    indicator.style.color = '#17a2b8';
+            }
+        }
+
         // 이벤트 리스너 추가
         document.addEventListener('DOMContentLoaded', () => {
             fetchOllamaStatusAndModels();
             fetchDocumentList();
+            updateSystemStats(); // 새로 추가: 시스템 통계 초기화
+            setupQuickSettings(); // 새로 추가: 빠른 설정 토글 초기화
+            
+            // 문서 목록 자동 새로고침 시작
+            startDocumentListPolling();
+            updateAutoRefreshIndicator('활성화');
             
             // 문서 관리 버튼들
             document.getElementById('refresh-documents').addEventListener('click', fetchDocumentList);
@@ -689,13 +1932,35 @@
             document.getElementById('cleanup-files').addEventListener('click', cleanupOrphanedFiles);
             document.getElementById('delete-all-documents').addEventListener('click', deleteAllDocuments);
             
-            // 문서 선택 시 미리보기 갱신
-            const docSelect = document.getElementById('document-select');
-            const info = document.getElementById('document-info');
-            docSelect.addEventListener('change', function() {
-                const previews = Array.from(this.selectedOptions).map(opt => opt.getAttribute('data-preview') || '').filter(Boolean);
-                info.textContent = previews.length > 0 ? `미리보기: ${previews.map(p => p.slice(0, 60)).join(' | ')}...` : '';
+            // 진행률 창 닫기 버튼
+            document.getElementById('hide-progress').addEventListener('click', () => {
+                const progressContainer = document.getElementById('progress-container');
+                const selectedFilesContainer = document.getElementById('selected-files-container');
+                
+                progressContainer.style.display = 'none';
+                clearMultiFileTracking();
+                
+                // 선택된 파일 목록도 숨기고 초기화
+                if (selectedFilesContainer) {
+                    selectedFilesContainer.style.display = 'none';
+                    document.getElementById('selected-files-list').innerHTML = '';
+                    selectedFilesForUpload.clear();
+                    
+                    // 파일 입력 초기화
+                    const pdfFileInput = document.getElementById('pdf-file');
+                    if (pdfFileInput) {
+                        pdfFileInput.value = '';
+                    }
+                    
+                    // 업로드 버튼 상태 초기화
+                    updateSelectedCount();
+                }
             });
+            
+            
+            // 모델 선택 변경 시 스타일 업데이트
+            const modelSelect = document.getElementById('ollama-models');
+            modelSelect.addEventListener('change', updateSelectedModelDisplay);
         });
 
         // 이미지 모달 기능 임시 비활성화
