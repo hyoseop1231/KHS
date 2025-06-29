@@ -31,8 +31,8 @@ class Settings:
     OLLAMA_DEFAULT_MODEL: str = os.getenv("OLLAMA_DEFAULT_MODEL", "gemma3n:e4b")
     OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "120"))
     LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.5"))
-    LLM_NUM_PREDICT_TEXT: int = int(os.getenv("LLM_NUM_PREDICT_TEXT", "1024"))
-    LLM_NUM_PREDICT_MULTIMODAL: int = int(os.getenv("LLM_NUM_PREDICT_MULTIMODAL", "1536"))
+    LLM_NUM_PREDICT_TEXT: int = int(os.getenv("LLM_NUM_PREDICT_TEXT", "2048"))
+    LLM_NUM_PREDICT_MULTIMODAL: int = int(os.getenv("LLM_NUM_PREDICT_MULTIMODAL", "3072"))
     
     # OCR settings
     TESSERACT_CMD: Optional[str] = os.getenv("TESSERACT_CMD")
@@ -44,10 +44,6 @@ class Settings:
     # Search settings
     TOP_K_RESULTS: int = int(os.getenv("TOP_K_RESULTS", "3"))
     
-    # Caching settings
-    ENABLE_RESPONSE_CACHE: bool = os.getenv("ENABLE_RESPONSE_CACHE", "True").lower() == "true"
-    CACHE_TTL_SECONDS: int = int(os.getenv("CACHE_TTL_SECONDS", "3600"))  # 1시간
-    MAX_CACHE_SIZE: int = int(os.getenv("MAX_CACHE_SIZE", "100"))  # 최대 100개 캐시
     
     # Streaming settings
     ENABLE_STREAMING: bool = os.getenv("ENABLE_STREAMING", "True").lower() == "true"

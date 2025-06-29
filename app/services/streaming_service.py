@@ -1,12 +1,65 @@
 """
 Streaming service for real-time LLM response delivery
 """
-from typing import Dict, Any, Generator
+from typing import Dict, Any, Generator, List
 from app.services.llm_service import get_llm_response, construct_multimodal_rag_prompt
 from app.config import settings
 from app.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+def generate_consistent_references(multimodal_content: Dict[str, Any]) -> str:
+    """
+    Generate consistent reference format from multimodal content
+    
+    Args:
+        multimodal_content: Retrieved content with text, images, tables
+        
+    Returns:
+        str: Formatted reference section
+    """
+    references = []
+    
+    # Extract text sources
+    text_data = multimodal_content.get("text", multimodal_content.get("text_chunks", []))
+    text_sources = set()
+    
+    if isinstance(text_data, list) and text_data:
+        for chunk in text_data:
+            if isinstance(chunk, dict):
+                source = chunk.get("metadata", {}).get("source_document_id", "")
+                if source:
+                    text_sources.add(source)
+            
+    for source in sorted(text_sources):
+        references.append(f"📄 {source}")
+    
+    # Extract table sources  
+    tables = multimodal_content.get("tables", [])
+    for i, table in enumerate(tables, 1):
+        if isinstance(table, dict):
+            metadata = table.get("metadata", {})
+            source = metadata.get("source_document_id", "")
+            page = metadata.get("page", "")
+            if source:
+                page_info = f" (페이지 {page})" if page else ""
+                references.append(f"📊 표{i} - {source}{page_info}")
+    
+    # Extract image sources
+    images = multimodal_content.get("images", [])
+    for i, image in enumerate(images, 1):
+        if isinstance(image, dict):
+            metadata = image.get("metadata", {})
+            source = metadata.get("source_document_id", "")
+            page = metadata.get("page", "")
+            if source:
+                page_info = f" (페이지 {page})" if page else ""
+                references.append(f"🖼️ 이미지{i} - {source}{page_info}")
+    
+    if references:
+        return f"\n\n## 📚 참고문헌\n" + "\n".join(f"- {ref}" for ref in references)
+    
+    return ""
 
 def process_multimodal_llm_chat_request_stream(
     user_query: str,
@@ -66,9 +119,17 @@ def process_multimodal_llm_chat_request_stream(
         )
         
         # Yield each chunk
+        response_complete = False
         for chunk in stream_generator:
             if chunk:  # Only yield non-empty chunks
                 yield chunk
+                response_complete = True
+        
+        # Add consistent references at the end if response was generated
+        if response_complete:
+            references = generate_consistent_references(multimodal_content)
+            if references:
+                yield references
                 
         logger.info("Streaming response completed")
         

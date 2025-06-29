@@ -1,343 +1,489 @@
-# 🏭 KITECH: 한국 주조기술 전문 멀티모달 RAG 챗봇
+# 🏭 KITECH RAG 챗봇 (KHS-2)
 
-![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
+한국생산기술연구원(KITECH) 주조 기술 전문 RAG(Retrieval Augmented Generation) 챗봇 시스템
+
+![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)
+![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
-![Security](https://img.shields.io/badge/Security-A+-brightgreen.svg)
 
-**KITECH**는 한국 주조기술 전문용어에 특화된 엔터프라이즈급 멀티모달 RAG (Retrieval Augmented Generation) 챗봇 시스템입니다. PDF 문서에서 텍스트, 이미지, 표를 지능적으로 추출하고, 첨단 AI 기술로 전문적인 답변을 제공합니다.
+## 📋 목차
 
-## ✨ 핵심 기능
+- [🎯 프로젝트 개요](#-프로젝트-개요)
+- [✨ 주요 기능](#-주요-기능)
+- [🏗️ 시스템 아키텍처](#️-시스템-아키텍처)
+- [⚡ 빠른 시작](#-빠른-시작)
+- [🐳 Docker 설치](#-docker-설치)
+- [📝 사용법](#-사용법)
+- [⚙️ 설정](#️-설정)
+- [🔧 개발](#-개발)
+- [📚 API 문서](#-api-문서)
+- [🚀 배포](#-배포)
+- [🧪 테스트](#-테스트)
+- [📊 모니터링](#-모니터링)
+- [🛠️ 문제 해결](#️-문제-해결)
 
-### 📄 **고급 멀티모달 문서 처리**
-- **🔍 지능형 PDF 분석**: PyMuPDF + Pytesseract OCR로 한국어/영어 동시 지원
-- **🖼️ 이미지 추출**: 고해상도 이미지 추출 및 메타데이터 자동 태깅
-- **📊 표 구조 인식**: OpenCV 기반 표 검출 및 구조화된 데이터 파싱
-- **⚡ 비동기 처리**: 대용량 파일도 백그라운드에서 효율적 처리
-- **🧠 OCR 교정**: LLM 기반 주조 전문용어 인식률 향상
+## 🎯 프로젝트 개요
 
-### 🚀 **첨단 RAG 검색 시스템**
-- **🔗 벡터 임베딩**: `jhgan/ko-sroberta-multitask` 한국어 특화 모델
-- **🗄️ 멀티모달 저장**: ChromaDB 기반 텍스트/이미지/표 분리 저장
-- **🎯 스마트 검색**: 의미 기반 검색 + 주조 전문용어 가중치 적용
-- **📁 문서별 필터링**: 특정 문서 또는 다중 문서 선택적 검색
-- **💾 지능형 캐시**: LRU 기반 응답 캐싱으로 성능 최적화
+KITECH RAG 챗봇은 주조 기술 분야의 전문 지식을 학습하여 사용자의 질문에 정확하고 상세한 답변을 제공하는 AI 시스템입니다.
 
-### 🤖 **전문가급 AI 답변 생성**
-- **🔗 Ollama LLM 연동**: 로컬 LLM 모델 자유 선택
-- **📋 멀티모달 RAG**: 텍스트, 이미지, 표를 통합한 맥락적 답변
-- **📍 정확한 출처 표시**: 문서, 페이지, 이미지, 표 참조 정보 자동 태깅
-- **🎨 마크다운 렌더링**: 구조화된 전문적 답변 형식
-- **🌊 실시간 스트리밍**: Server-Sent Events로 즉시 응답 확인
+### 🌟 핵심 특징
 
-### 🎨 **현대적 사용자 인터페이스**
-- **📱 반응형 디자인**: 모바일/태블릿/데스크탑 최적화
-- **📊 실시간 대시보드**: OCR/LLM 상태, 시스템 리소스 모니터링
-- **📈 진행률 시각화**: 문서 처리 단계별 상세 진행 상황
-- **🎛️ 직관적 제어**: OCR 교정, LLM 교정 토글 설정
-- **🔍 멀티모달 표시**: 참조 이미지/표를 답변과 함께 시각화
+- **🔍 멀티모달 RAG**: 텍스트, 이미지, 표 데이터를 통합 분석
+- **🇰🇷 한국어 최적화**: 한국어 전용 임베딩 모델 (jhgan/ko-sroberta-multitask)
+- **📊 실시간 처리**: 스트리밍 응답으로 빠른 사용자 경험
+- **🔒 보안 강화**: 파일 검증, 입력 검증, XSS 방지
+- **📈 성능 최적화**: 병렬 처리, 배치 임베딩, 메모리 관리
+- **🐳 Docker 지원**: 컨테이너화된 배포 환경
+
+## ✨ 주요 기능
+
+### 📄 문서 처리
+- **PDF 업로드 및 분석**: 텍스트, 이미지, 표 자동 추출
+- **고급 OCR**: Tesseract + OpenCV를 활용한 한국어 텍스트 인식
+- **멀티모달 콘텐츠**: 이미지 설명 및 표 구조 분석
+- **실시간 진행률**: 문서 처리 상태 실시간 모니터링
+
+### 🤖 AI 대화
+- **스트리밍 응답**: 실시간 답변 생성 및 표시
+- **컨텍스트 인식**: 문서 내용 기반 정확한 답변
+- **마크다운 렌더링**: 구조화된 답변 형식
+- **참조 정보**: 답변 근거가 되는 문서 정보 제공
+
+### 🎛️ 시스템 관리
+- **실시간 대시보드**: 시스템 상태, 문서 통계
+- **모델 관리**: Ollama 모델 선택 및 상태 확인
+- **설정 최적화**: OCR 교정, LLM 교정 토글
+- **자동 새로고침**: 상태 정보 자동 업데이트
 
 ## 🏗️ 시스템 아키텍처
 
 ```
-KITECH/
-├── 🚀 app/
-│   ├── main.py                 # FastAPI 앱 + 보안 미들웨어
-│   ├── config.py              # 환경변수 기반 설정 관리
-│   ├── 🌐 api/
-│   │   └── endpoints.py       # REST API + 스트리밍 엔드포인트
-│   ├── 🔧 services/
-│   │   ├── ocr_service.py     # 멀티모달 OCR 처리
-│   │   ├── text_processing_service.py # 텍스트 청킹 & 임베딩
-│   │   ├── vector_db_service.py       # ChromaDB 벡터 관리
-│   │   ├── llm_service.py            # Ollama LLM 연동
-│   │   ├── multimodal_llm_service.py # 멀티모달 RAG 로직
-│   │   ├── cache_service.py          # 응답 캐시 관리
-│   │   ├── streaming_service.py      # 실시간 스트리밍
-│   │   ├── ocr_correction_service.py # OCR 교정 시스템
-│   │   └── term_correction_service.py # 주조 전문용어 교정
-│   ├── 🛡️ utils/
-│   │   ├── security.py        # 파일 검증 & 보안
-│   │   ├── sanitizer.py       # XSS 방지 & 콘텐츠 정화
-│   │   ├── monitoring.py      # 성능 모니터링 & 헬스체크
-│   │   ├── logging_config.py  # 구조화된 로깅
-│   │   └── exceptions.py      # 커스텀 예외 처리
-│   ├── 🎨 templates/
-│   │   └── index.html         # 반응형 웹 인터페이스
-│   ├── 📁 static/
-│   │   └── style.css          # 현대적 UI 스타일
-│   └── 📊 data/
-│       └── foundry_terminology.json # 주조 전문용어 사전
-├── 📋 tests/                   # 포괄적 테스트 스위트
-├── 🗂️ uploads/                # 업로드 파일 임시 저장
-├── 🗄️ vector_db_data/        # ChromaDB 영구 저장
-└── 📝 logs/                   # 시스템 로그 파일
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Frontend      │    │   Backend       │    │   External      │
+│   (HTML/JS)     │    │   (FastAPI)     │    │   Services      │
+├─────────────────┤    ├─────────────────┤    ├─────────────────┤
+│ • 파일 업로드    │◄──►│ • API 엔드포인트 │◄──►│ • Ollama LLM    │
+│ • 실시간 채팅    │    │ • 멀티모달 처리  │    │ • ChromaDB      │
+│ • 진행률 표시    │    │ • 스트리밍 응답  │    │ • Tesseract OCR │
+│ • 상태 모니터링  │    │ • 보안 & 검증   │    │                 │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 │
+                    ┌─────────────▼─────────────┐
+                    │      Core Services        │
+                    ├───────────────────────────┤
+                    │ • PDF 처리 (PyMuPDF)      │
+                    │ • OCR 서비스 (Tesseract)   │
+                    │ • 텍스트 처리 & 청킹       │
+                    │ • 벡터 DB (ChromaDB)      │
+                    │ • 임베딩 (SentenceTransf) │
+                    │ • 실시간 처리 관리         │
+                    └───────────────────────────┘
 ```
 
-## 🔒 보안 & 성능 특징
+### 📂 프로젝트 구조
 
-### 🛡️ **엔터프라이즈급 보안**
-- **XSS 방지**: 포괄적인 콘텐츠 Sanitization 시스템
-- **파일 검증**: MIME 타입, 파일 시그니처, 크기 검증
-- **보안 헤더**: CSP, XSS Protection, HSTS 적용
-- **입력 검증**: 모든 사용자 입력에 대한 엄격한 검증
-- **프로덕션 강화**: SECRET_KEY 강제, CORS 제한
-
-### ⚡ **최적화된 성능**
-- **메모리 효율성**: psutil 기반 동적 배치 크기 조정
-- **비동기 처리**: FastAPI + 백그라운드 작업 처리
-- **스마트 캐시**: LRU 캐시 + TTL 기반 응답 캐싱
-- **배치 처리**: 대용량 문서 효율적 처리
-- **리소스 모니터링**: 실시간 시스템 리소스 추적
-
-### 📊 **모니터링 & 관리**
-- **헬스체크**: `/api/health` 엔드포인트
-- **성능 메트릭**: `/api/metrics` 실시간 통계
-- **구조화된 로깅**: 레벨별 로그 분리 저장
-- **에러 추적**: 상세한 스택 트레이스 기록
-
-## 🚀 빠른 시작
-
-### 1️⃣ **시스템 요구사항**
-
-- **Python**: 3.8+ (권장: 3.11+)
-- **메모리**: 최소 4GB RAM (권장: 8GB+)
-- **디스크**: 최소 2GB 여유 공간
-- **OS**: Windows 10+, macOS 10.15+, Ubuntu 18.04+
-
-### 2️⃣ **Tesseract OCR 설치**
-
-**Ubuntu/Debian:**
-```bash
-sudo apt-get update
-sudo apt-get install tesseract-ocr tesseract-ocr-kor tesseract-ocr-eng
+```
+KHS-2/
+├── app/
+│   ├── api/
+│   │   └── endpoints.py          # API 라우터 및 엔드포인트
+│   ├── services/
+│   │   ├── llm_service.py        # LLM 통신 및 프롬프트 생성
+│   │   ├── multimodal_llm_service.py  # 멀티모달 LLM 처리
+│   │   ├── streaming_service.py  # 스트리밍 응답 처리
+│   │   ├── ocr_service.py        # OCR 및 문서 처리
+│   │   ├── text_processing_service.py  # 텍스트 처리 및 임베딩
+│   │   ├── vector_db_service.py  # 벡터 DB 관리
+│   │   └── model_info_service.py # 모델 정보 캐시
+│   ├── utils/
+│   │   ├── logging_config.py     # 로깅 설정
+│   │   ├── security.py           # 보안 유틸리티
+│   │   ├── sanitizer.py          # 입력 검증
+│   │   ├── monitoring.py         # 성능 모니터링
+│   │   └── file_manager.py       # 파일 관리
+│   ├── templates/
+│   │   └── index.html            # 메인 웹 인터페이스
+│   ├── static/
+│   │   └── style.css             # CSS 스타일
+│   ├── config.py                 # 애플리케이션 설정
+│   └── main.py                   # FastAPI 애플리케이션
+├── uploads/                      # 업로드된 파일 저장소
+├── vector_db_data/               # ChromaDB 데이터
+├── requirements.txt              # Python 의존성
+├── Dockerfile                    # Docker 이미지 빌드
+├── docker-compose.yml            # Docker Compose 설정
+└── README.md                     # 프로젝트 문서
 ```
 
-**macOS:**
+## ⚡ 빠른 시작
+
+### 📋 시스템 요구사항
+
+- **Python**: 3.11+
+- **메모리**: 최소 8GB (권장 16GB+)
+- **디스크**: 최소 10GB 여유 공간
+- **Ollama**: 설치 및 실행 중이어야 함
+
+### 🔧 로컬 설치
+
+1. **저장소 클론**
 ```bash
-brew install tesseract tesseract-lang
-```
-
-**Windows:**
-1. [Tesseract 설치 프로그램](https://github.com/UB-Mannheim/tesseract/wiki) 다운로드
-2. 설치 시 "Korean" 언어팩 선택
-3. PATH 환경변수에 Tesseract 경로 추가
-
-### 3️⃣ **Ollama LLM 설치**
-
-```bash
-# Ollama 설치 (공식 웹사이트 참조)
-curl -fsSL https://ollama.ai/install.sh | sh
-
-# 한국어 특화 모델 다운로드 (예시)
-ollama pull gemma2:9b
-ollama pull qwen2:7b
-```
-
-### 4️⃣ **프로젝트 설정**
-
-```bash
-# 저장소 클론
 git clone <repository-url>
-cd KITECH
+cd KHS-2
+```
 
-# 가상환경 생성 및 활성화
+2. **가상환경 생성 및 활성화**
+```bash
 python -m venv venv
-source venv/bin/activate  # Linux/macOS
-# 또는 venv\\Scripts\\activate  # Windows
+source venv/bin/activate  # Linux/Mac
+# venv\Scripts\activate   # Windows
+```
 
-# 환경설정 파일 생성
-cp .env.example .env
-# .env 파일을 편집하여 필요한 설정 조정
-
-# 의존성 설치
+3. **의존성 설치**
+```bash
 pip install -r requirements.txt
 ```
 
-### 5️⃣ **애플리케이션 실행**
+4. **Ollama 설치 및 모델 다운로드**
+```bash
+# Ollama 설치 (https://ollama.com/download)
+ollama pull gemma2:9b
+# 또는 다른 선호 모델
+```
 
-**개발 환경:**
+5. **환경 변수 설정**
+```bash
+cp .env.example .env
+# .env 파일을 편집하여 설정 조정
+```
+
+6. **애플리케이션 실행**
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**프로덕션 환경:**
-```bash
-gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+7. **브라우저에서 접속**
+```
+http://localhost:8000
 ```
 
-**또는 간편 실행:**
+## 🐳 Docker 설치
+
+### 기본 실행
+
 ```bash
-python start_server.py
+# 이미지 빌드 및 실행
+docker-compose up -d
+
+# 로그 확인
+docker-compose logs -f kitech-app
 ```
 
-### 6️⃣ **웹 인터페이스 접속**
+### 프로덕션 배포
 
-브라우저에서 `http://localhost:8000` 접속
+```bash
+# 프로덕션 모드 (Nginx 포함)
+docker-compose --profile production up -d
 
-## 🧪 테스트 실행
+# 모니터링 포함
+docker-compose --profile production --profile monitoring up -d
+```
+
+### 환경 변수 설정
+
+`.env` 파일 생성:
+
+```bash
+# 보안 설정
+SECRET_KEY=your-super-secret-key-here
+CORS_ORIGINS=http://localhost:8000,https://yourdomain.com
+
+# LLM 설정
+OLLAMA_API_URL=http://host.docker.internal:11434/api/generate
+OLLAMA_DEFAULT_MODEL=gemma2:9b
+
+# 파일 처리 설정
+MAX_FILE_SIZE=200
+OCR_LANGUAGES=kor+eng
+OCR_MAX_WORKERS=4
+
+# 성능 설정
+EMBEDDING_BATCH_SIZE=32
+CHUNK_SIZE=1000
+```
+
+## 📝 사용법
+
+### 1. 문서 업로드
+
+1. **파일 선택**: PDF 파일을 드래그&드롭 또는 클릭하여 선택
+2. **OCR 설정**: OCR 교정 및 LLM 교정 옵션 선택
+3. **업로드 시작**: "업로드 및 처리" 버튼 클릭
+4. **진행률 확인**: 실시간 처리 상태 모니터링
+
+### 2. AI 채팅
+
+1. **질문 입력**: 하단 채팅창에 질문 입력
+2. **모델 선택**: 상단에서 사용할 AI 모델 선택
+3. **답변 확인**: 스트리밍으로 실시간 답변 생성
+4. **참조 정보**: 답변 하단의 출처 문서 확인
+
+### 3. 시스템 모니터링
+
+- **대시보드**: 실시간 시스템 상태 확인
+- **문서 관리**: 업로드된 문서 목록 및 삭제
+- **모델 상태**: Ollama 연결 상태 및 모델 정보
+- **성능 지표**: 메모리 사용량, 처리 속도 등
+
+## ⚙️ 설정
+
+### 주요 설정 파일
+
+#### `app/config.py`
+
+```python
+# 서버 설정
+HOST = "0.0.0.0"
+PORT = 8000
+DEBUG = False
+
+# 파일 처리
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+ALLOWED_EXTENSIONS = [".pdf"]
+
+# LLM 설정
+OLLAMA_API_URL = "http://localhost:11434/api/generate"
+OLLAMA_DEFAULT_MODEL = "gemma2:9b"
+LLM_TEMPERATURE = 0.7
+
+# OCR 설정
+OCR_LANGUAGES = "kor+eng"
+OCR_DPI = 300
+OCR_CORRECTION_ENABLED = True
+
+# 성능 최적화
+EMBEDDING_BATCH_SIZE = 32
+OCR_MAX_WORKERS = 8
+CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 150
+```
+
+### 환경 변수
+
+| 변수명 | 기본값 | 설명 |
+|--------|--------|------|
+| `HOST` | 0.0.0.0 | 서버 호스트 |
+| `PORT` | 8000 | 서버 포트 |
+| `DEBUG` | False | 디버그 모드 |
+| `SECRET_KEY` | - | JWT 암호화 키 |
+| `OLLAMA_API_URL` | http://localhost:11434/api/generate | Ollama API URL |
+| `OLLAMA_DEFAULT_MODEL` | gemma2:9b | 기본 LLM 모델 |
+| `MAX_FILE_SIZE` | 100 | 최대 파일 크기 (MB) |
+| `OCR_LANGUAGES` | kor+eng | OCR 언어 설정 |
+| `EMBEDDING_BATCH_SIZE` | 32 | 임베딩 배치 크기 |
+
+## 🔧 개발
+
+### 개발 환경 설정
+
+```bash
+# 개발용 의존성 설치
+pip install -r requirements.txt
+
+# 개발 서버 실행 (핫 리로드)
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 새로운 서비스 추가
+
+1. `app/services/` 디렉토리에 새 서비스 파일 생성
+2. `app/api/endpoints.py`에 API 엔드포인트 추가
+3. 필요시 `app/config.py`에 설정 추가
+4. 테스트 작성 (`tests/` 디렉토리)
+
+## 📚 API 문서
+
+개발 모드에서 자동 생성되는 API 문서:
+
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+### 주요 엔드포인트
+
+#### 문서 관리
+
+```http
+POST /api/upload_pdf/
+GET /api/documents
+DELETE /api/documents/{document_id}
+GET /api/upload_status/{document_id}
+```
+
+#### AI 채팅
+
+```http
+POST /api/chat/stream
+POST /api/chat
+```
+
+#### 시스템 정보
+
+```http
+GET /api/ollama/status
+GET /api/ollama/models
+GET /api/storage/stats
+GET /api/health
+```
+
+## 🚀 배포
+
+### 프로덕션 배포 체크리스트
+
+- [ ] 환경 변수 설정 (`SECRET_KEY`, `CORS_ORIGINS` 등)
+- [ ] HTTPS 설정 (Nginx + SSL 인증서)
+- [ ] 로그 설정 및 로테이션
+- [ ] 백업 전략 (DB, 업로드 파일)
+- [ ] 모니터링 설정 (Prometheus + Grafana)
+- [ ] 보안 검토 (방화벽, 접근 제어)
+
+### Nginx 설정 예시
+
+```nginx
+server {
+    listen 80;
+    server_name yourdomain.com;
+    
+    client_max_body_size 200M;
+    
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # WebSocket 지원
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+## 🧪 테스트
+
+### 단위 테스트
 
 ```bash
 # 전체 테스트 실행
 pytest
 
-# 커버리지 포함 테스트
-pytest --cov=app --cov-report=html
+# 커버리지 포함
+pytest --cov=app tests/
 
-# 특정 테스트만 실행
-pytest tests/test_security.py -v
-
-# 성능 테스트
-pytest tests/test_performance.py -v
+# 특정 테스트 실행
+pytest tests/test_llm_service.py -v
 ```
 
-## 📖 사용 방법
+## 📊 모니터링
 
-### 📁 **문서 업로드**
-1. 웹 페이지에서 PDF 파일 선택
-2. OCR/LLM 교정 옵션 설정
-3. "업로드 및 처리" 클릭
-4. 실시간 진행률 확인
+### 기본 모니터링
 
-### 💬 **AI 챗봇 대화**
-1. 업로드된 문서 선택 (옵션)
-2. 주조기술 관련 질문 입력
-3. 실시간 스트리밍 답변 확인
-4. 참조 이미지/표 함께 검토
+시스템 대시보드에서 실시간 확인 가능:
 
-### 📊 **시스템 모니터링**
-- 대시보드에서 실시간 상태 확인
-- `/api/health` - 시스템 헬스체크
-- `/api/metrics` - 성능 지표 조회
+- **시스템 상태**: CPU, 메모리, 디스크 사용률
+- **문서 통계**: 업로드된 문서 수, 총 청크 수
+- **모델 상태**: Ollama 연결 상태, 활성 모델
+- **처리 성능**: 응답 시간, 처리량
 
-## 🔧 고급 설정
+### 고급 모니터링 (선택사항)
 
-### 📋 **주요 환경변수**
+Docker Compose 모니터링 프로필 사용:
 
 ```bash
-# 서버 설정
-HOST=0.0.0.0
-PORT=8000
-DEBUG=False
+# Prometheus + Grafana 실행
+docker-compose --profile monitoring up -d
 
-# 보안 설정
-SECRET_KEY=your-super-secure-secret-key
-CORS_ORIGINS=https://yourdomain.com
-
-# LLM 설정
-OLLAMA_DEFAULT_MODEL=gemma2:9b
-LLM_TEMPERATURE=0.7
-LLM_NUM_PREDICT_MULTIMODAL=2048
-
-# 성능 최적화
-OCR_MAX_WORKERS=8
-EMBEDDING_BATCH_SIZE=32
-CACHE_TTL_SECONDS=3600
-
-# 파일 처리
-MAX_FILE_SIZE=200  # MB
-ALLOWED_EXTENSIONS=.pdf,.docx
+# 접속
+# Prometheus: http://localhost:9090
+# Grafana: http://localhost:3000 (admin/admin123)
 ```
 
-### 🔄 **Docker 배포 (권장)**
+## 🛠️ 문제 해결
 
-#### 🚀 **빠른 Docker 배포**
+### 일반적인 문제
+
+#### 1. Ollama 연결 실패
+
 ```bash
-# 1. 자동 설정 스크립트 사용 (권장)
-./scripts/docker-setup.sh
+# Ollama 상태 확인
+ollama list
 
-# 2. 개발 환경
-./scripts/docker-setup.sh --dev
+# Ollama 재시작
+killall ollama
+ollama serve
 
-# 3. 모니터링 포함 프로덕션
-./scripts/docker-setup.sh --monitoring
-
-# 4. 수동 배포
-docker-compose up --build -d
+# 방화벽 확인
+curl http://localhost:11434/api/tags
 ```
 
-#### 📋 **주요 Docker 구성**
-- **🐳 Multi-stage Dockerfile**: 최적화된 이미지 크기
-- **📦 Docker Compose**: 개발/프로덕션 환경 분리
-- **🔒 보안 설정**: 비root 사용자, 헬스체크 포함
-- **📊 모니터링**: Prometheus + Grafana (선택사항)
-- **🌐 Nginx 프록시**: 프로덕션 로드밸런싱
+#### 2. OCR 오류
 
-#### 🔧 **빠른 커맨드**
 ```bash
-# 서비스 시작
-docker-compose up -d
+# Tesseract 설치 확인
+tesseract --version
 
-# 로그 확인
-docker-compose logs -f kitech-app
-
-# 헬스체크
-curl http://localhost:8000/api/health
-
-# 데이터 백업
-docker run --rm -v kitech_vector_data:/data ubuntu tar czf backup.tar.gz -C /data .
+# 언어 팩 설치
+sudo apt-get install tesseract-ocr-kor
 ```
 
-> 💡 **자세한 Docker 가이드**: [docs/DOCKER.md](docs/DOCKER.md) 참조
+#### 3. 메모리 부족
 
-## 🎯 성능 최적화 팁
+```python
+# config.py에서 설정 조정
+EMBEDDING_BATCH_SIZE = 16  # 기본값: 32
+OCR_MAX_WORKERS = 4        # 기본값: 8
+```
 
-### 🚀 **메모리 최적화**
-- 큰 PDF 파일은 배치 크기 조정
-- OCR_MAX_WORKERS를 CPU 코어 수에 맞게 설정
-- 임베딩 모델 캐싱 활용
+#### 4. 파일 업로드 실패
 
-### ⚡ **응답 속도 향상**
-- 자주 묻는 질문은 캐시 활용
-- 불필요한 이미지/표 제외
-- 컨텍스트 압축 설정 조정
+- 파일 크기 확인 (기본값: 100MB)
+- 파일 권한 확인
+- 디스크 공간 확인
 
-### 📊 **확장성 고려사항**
-- Redis 캐시 도입 검토
-- 분산 처리를 위한 Celery 적용
-- 로드 밸런싱 구성
+### 디버깅
 
-## 🐛 문제 해결
-
-### ❓ **자주 묻는 질문**
-
-**Q: OCR 한국어 인식률이 낮아요**
-A: Tesseract 한국어 데이터 파일 확인 및 OCR_DPI 설정 조정
-
-**Q: LLM 응답이 느려요**
-A: 모델 크기 조정 또는 GPU 사용 검토
-
-**Q: 메모리 부족 오류가 발생해요**
-A: OCR_BATCH_SIZE 및 EMBEDDING_BATCH_SIZE 감소
-
-### 🔍 **로그 확인**
 ```bash
-# 실시간 로그 모니터링
-tail -f logs/app.log
+# 디버그 모드 실행
+export DEBUG=true
+uvicorn app.main:app --reload --log-level debug
 
-# 에러 로그만 확인
-tail -f logs/error.log
+# 상세 로그 확인
+export LOG_LEVEL=DEBUG
 ```
 
-## 🤝 기여하기
+### 성능 최적화
 
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+```python
+# 대용량 파일 처리 시
+OCR_BATCH_SIZE = 4          # 배치 크기 감소
+OCR_MAX_WORKERS = 4         # 워커 수 감소
+EMBEDDING_BATCH_SIZE = 16   # 임베딩 배치 크기 감소
+```
+
+## 📞 지원
+
+- **이슈 리포트**: [GitHub Issues](링크)
+- **문서**: [Wiki](링크)
+- **이메일**: support@kitech.re.kr
 
 ## 📄 라이선스
 
-이 프로젝트는 MIT 라이선스 하에 배포됩니다. 자세한 내용은 `LICENSE` 파일을 참조하세요.
-
-## 🙏 감사의 말
-
-- [FastAPI](https://fastapi.tiangolo.com/) - 현대적인 웹 프레임워크
-- [ChromaDB](https://www.trychroma.com/) - 벡터 데이터베이스
-- [Ollama](https://ollama.ai/) - 로컬 LLM 플랫폼
-- [Tesseract](https://tesseract-ocr.github.io/) - OCR 엔진
+이 프로젝트는 [MIT 라이선스](LICENSE) 하에 배포됩니다.
 
 ---
 
-**KITECH으로 한국 주조기술의 디지털 혁신을 경험하세요! 🏭✨**
+**한국생산기술연구원(KITECH)** © 2024

@@ -9,6 +9,7 @@ from app.utils.logging_config import get_logger
 from app.utils.exceptions import EmbeddingError, TextProcessingError
 
 from app.services.vector_db_service import store_text_vectors, store_multimodal_content
+from app.services.ocr_service import extract_multimodal_content_from_pdf
 
 logger = get_logger(__name__)
 
@@ -129,7 +130,7 @@ def get_embeddings(text_chunks: List[str], batch_size: int = None) -> List[List[
         # 빈 청크 제거 및 검증
         non_empty_chunks = []
         for i, chunk in enumerate(text_chunks):
-            if chunk and chunk.strip() and len(chunk.strip()) > 5:  # 최소 5자 이상
+            if chunk and chunk.strip() and len(chunk.strip()) >= 2:  # 최소 2자 이상
                 non_empty_chunks.append(chunk.strip())
             else:
                 logger.debug(f"Skipped empty/short chunk at index {i}")

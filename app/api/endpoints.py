@@ -13,9 +13,7 @@ from app.services.ocr_service import extract_multimodal_content_from_pdf, extrac
 from app.services.text_processing_service import split_text_into_chunks, get_embeddings
 from app.services.vector_db_service import get_all_documents, delete_document, delete_all_documents, get_document_info
 from app.services.vector_db_service import store_multimodal_content, search_multimodal_content, delete_multimodal_document, get_multimodal_document_info, delete_all_multimodal_documents
-from app.services.llm_service import process_llm_chat_request, format_cached_response_with_llm
 from app.services.multimodal_llm_service import process_multimodal_llm_chat_request, enhance_response_with_media_references
-from app.services.cache_service import get_cached_response, cache_response, get_cache_stats
 from app.services.streaming_service import process_multimodal_llm_chat_request_stream
 from app.config import settings
 from app.utils.logging_config import get_logger
@@ -214,7 +212,7 @@ def process_pdf_background(
             _cleanup_failed_processing(file_path, document_id)
             return
 
-        # 5. 최종 상태 업데이트 (process_multimodal_pdf_and_store에서 100% 완료 처리됨)
+        # 5. 최종 상태 업데이트 - 완료 처리
         final_message = f"처리 완료! 텍스트: {text_chunks}청크, 이미지: {extracted_images}개, 표: {extracted_tables}개"
         final_details = {
             "total_pages": total_pages,
@@ -224,7 +222,21 @@ def process_pdf_background(
             "text_length": len(extracted_text) if extracted_text else 0,
             "processing_time": None
         }
+        update_status("Completed", final_message, 100, total_pages, total_pages, final_details)
         logger.info(f"[Task {document_id}] Successfully processed and stored multimodal content for: {document_id}")
+        
+        # 완료 후 일정 시간 후 상태 정리 (15초)
+        import threading
+        def cleanup_status():
+            import time
+            time.sleep(15)
+            if document_id in pdf_processing_status:
+                del pdf_processing_status[document_id]
+                logger.info(f"[Task {document_id}] Status cleaned up from memory")
+        
+        cleanup_thread = threading.Thread(target=cleanup_status)
+        cleanup_thread.daemon = True
+        cleanup_thread.start()
 
     except Exception as e:
         pdf_processing_status[document_id] = {"step": "Error", "message": f"예외 발생: {str(e)}", "percent": 0}
@@ -352,11 +364,9 @@ async def get_metrics():
     """Get application performance metrics"""
     monitor = get_monitor()
     stats = monitor.get_stats()
-    cache_stats = get_cache_stats()
     
     return JSONResponse(content={
         "performance": stats,
-        "cache": cache_stats,
         "timestamp": time.time()
     })
 
@@ -376,82 +386,6 @@ async def chat_with_documents_stream(request: ChatRequest):
     elif request.document_id:
         document_ids = [request.document_id]
     
-    # Check cache first
-    cached_response = get_cached_response(query, document_ids, model_name)
-    if cached_response:
-        logger.info(f"Returning cached response as stream for query: {query[:50]}...")
-        
-        def stream_cached_response():
-            import json
-            import time
-            
-            # Send status updates for cached response
-            yield f"data: {json.dumps({'type': 'status', 'message': '캐시에서 답변을 불러오고 있습니다...'}, ensure_ascii=False)}\n\n"
-            
-            # Format cached response with LLM for better structure
-            response_text = cached_response.get('response', '')
-            
-            # Send formatting status
-            yield f"data: {json.dumps({'type': 'status', 'message': 'LLM으로 답변을 구조화하고 있습니다...'}, ensure_ascii=False)}\n\n"
-            
-            try:
-                # Format the cached response using LLM
-                formatted_response = format_cached_response_with_llm(response_text, model_name)
-                logger.info(f"Cached response formatted with LLM: {len(response_text)} -> {len(formatted_response)} chars")
-                
-                # Use the formatted response
-                response_text = formatted_response
-                
-            except Exception as e:
-                logger.error(f"Failed to format cached response with LLM: {e}")
-                # Use original response if formatting fails
-                response_text = cached_response.get('response', '')
-            
-            # Split into sentences or paragraphs for streaming
-            import re
-            # Split by sentences (periods, exclamation marks, question marks followed by space or newline)
-            sentences = re.split(r'([.!?]\s+|\n\n+)', response_text)
-            sentences = [s for s in sentences if s.strip()]  # Remove empty strings
-            
-            if not sentences:
-                # Fallback to word-by-word if no sentences found
-                sentences = response_text.split()
-            
-            accumulated_text = ""
-            for i, chunk in enumerate(sentences):
-                accumulated_text += chunk
-                
-                chunk_data = {
-                    "type": "content",
-                    "content": chunk,
-                    "is_final": i == len(sentences) - 1,
-                    "cached": True
-                }
-                yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
-                
-                # Small delay between chunks for smoother streaming
-                time.sleep(0.05)
-                
-            # Send final metadata
-            final_data = {
-                "type": "final",
-                "metadata": {
-                    "content_summary": cached_response.get('content_summary', {}),
-                    "media_references": cached_response.get('media_references', {}),
-                    "cached": True
-                }
-            }
-            yield f"data: {json.dumps(final_data, ensure_ascii=False)}\n\n"
-        
-        return StreamingResponse(
-            stream_cached_response(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"
-            }
-        )
 
     # Process real-time streaming
     async def stream_response():
@@ -463,28 +397,43 @@ async def chat_with_documents_stream(request: ChatRequest):
             
             import time
             start_time = time.time()
-            query_vector = get_embeddings([query])[0]
-            embedding_time = time.time() - start_time
-            logger.info(f"Query embedding generation took: {embedding_time:.2f} seconds")
+            
+            try:
+                query_embeddings = get_embeddings([query])
+                if not query_embeddings:
+                    yield f"data: {json.dumps({'type': 'error', 'message': '질문을 처리할 수 없습니다. 질문이 너무 짧거나 유효하지 않습니다.'}, ensure_ascii=False)}\n\n"
+                    return
+                query_vector = query_embeddings[0]
+                embedding_time = time.time() - start_time
+                logger.info(f"Query embedding generation took: {embedding_time:.2f} seconds")
+            except Exception as e:
+                logger.error(f"임베딩 생성 실패: {e}")
+                yield f"data: {json.dumps({'type': 'error', 'message': f'임베딩 생성 중 오류가 발생했습니다: {str(e)}'}, ensure_ascii=False)}\n\n"
+                return
             
             # 2. Vector search
             yield f"data: {json.dumps({'type': 'status', 'message': '관련 문서 검색 중...'}, ensure_ascii=False)}\n\n"
             
-            # Apply document filter if specified
-            filter_metadata = None
-            if document_ids and len(document_ids) > 0:
-                if len(document_ids) == 1:
-                    filter_metadata = {"source_document_id": document_ids[0]}
-                else:
-                    filter_metadata = {"source_document_id": {"$in": document_ids}}
-            
-            multimodal_results = search_multimodal_content(
-                query_vector=query_vector,
-                top_k=settings.TOP_K_RESULTS,
-                filter_metadata=filter_metadata,
-                include_images=True,
-                include_tables=True
-            )
+            try:
+                # Apply document filter if specified
+                filter_metadata = None
+                if document_ids and len(document_ids) > 0:
+                    if len(document_ids) == 1:
+                        filter_metadata = {"source_document_id": document_ids[0]}
+                    else:
+                        filter_metadata = {"source_document_id": {"$in": document_ids}}
+                
+                multimodal_results = search_multimodal_content(
+                    query_vector=query_vector,
+                    top_k=settings.TOP_K_RESULTS,
+                    filter_metadata=filter_metadata,
+                    include_images=True,
+                    include_tables=True
+                )
+            except Exception as e:
+                logger.error(f"벡터 검색 실패: {e}")
+                yield f"data: {json.dumps({'type': 'error', 'message': f'문서 검색 중 오류가 발생했습니다: {str(e)}'}, ensure_ascii=False)}\n\n"
+                return
             
             # Debug: Log search results
             retrieved_chunks = multimodal_results.get('text', [])
@@ -492,6 +441,11 @@ async def chat_with_documents_stream(request: ChatRequest):
             retrieved_tables = multimodal_results.get('tables', [])
             
             logger.info(f"Streaming search results: text={len(retrieved_chunks)}, images={len(retrieved_images)}, tables={len(retrieved_tables)}")
+            
+            # Check if we have any search results
+            if not retrieved_chunks and not retrieved_images and not retrieved_tables:
+                yield f"data: {json.dumps({'type': 'error', 'message': '관련된 문서를 찾을 수 없습니다. 문서가 업로드되어 있는지 확인해주세요.'}, ensure_ascii=False)}\n\n"
+                return
             
             # Debug: Log actual content
             if retrieved_chunks:
@@ -518,13 +472,19 @@ async def chat_with_documents_stream(request: ChatRequest):
             
             full_response = ""
             word_buffer = ""
-            stream_generator = process_multimodal_llm_chat_request_stream(
-                user_query=query,
-                multimodal_content=all_retrieved_content,
-                model_name=model_name,
-                lang=lang,
-                options=llm_options
-            )
+            
+            try:
+                stream_generator = process_multimodal_llm_chat_request_stream(
+                    user_query=query,
+                    multimodal_content=all_retrieved_content,
+                    model_name=model_name,
+                    lang=lang,
+                    options=llm_options
+                )
+            except Exception as e:
+                logger.error(f"LLM 스트리밍 초기화 실패: {e}")
+                yield f"data: {json.dumps({'type': 'error', 'message': f'답변 생성 초기화 중 오류가 발생했습니다: {str(e)}'}, ensure_ascii=False)}\n\n"
+                return
             
             for chunk in stream_generator:
                 full_response += chunk
@@ -579,8 +539,6 @@ async def chat_with_documents_stream(request: ChatRequest):
                 }
             }
             
-            # Cache the response
-            cache_response(query, response_data, document_ids, model_name)
             
             # Send final metadata
             final_data = {
@@ -588,7 +546,6 @@ async def chat_with_documents_stream(request: ChatRequest):
                 "metadata": {
                     "content_summary": response_data['content_summary'],
                     "media_references": response_data['media_references'],
-                    "cached": False
                 }
             }
             yield f"data: {json.dumps(final_data, ensure_ascii=False)}\n\n"
@@ -739,8 +696,6 @@ async def chat_with_llm(chat_request: ChatRequest):
         }
     }
     
-    # Cache the response
-    cache_response(query, response_data, document_ids, model_name)
     
     return ChatResponse(**response_data)
 
@@ -1138,34 +1093,3 @@ def get_storage_statistics():
         logger.error(f"Unexpected error getting storage stats: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="통계 조회 중 예상치 못한 오류가 발생했습니다")
 
-@router.get("/cache/stats")
-def get_cache_statistics():
-    """
-    캐시 시스템 통계를 반환합니다.
-    """
-    try:
-        stats = get_cache_stats()
-        return {
-            "cache_stats": stats,
-            "status": "active" if stats["enabled"] else "disabled"
-        }
-    except Exception as e:
-        logger.error(f"Error getting cache stats: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="캐시 통계 조회 중 오류가 발생했습니다")
-
-@router.post("/cache/clear")
-def clear_response_cache():
-    """
-    응답 캐시를 모두 삭제합니다.
-    """
-    try:
-        from app.services.cache_service import clear_cache
-        clear_cache()
-        logger.info("Response cache cleared by user request")
-        return {
-            "message": "캐시가 성공적으로 삭제되었습니다",
-            "status": "success"
-        }
-    except Exception as e:
-        logger.error(f"Error clearing cache: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="캐시 삭제 중 오류가 발생했습니다")

@@ -130,7 +130,7 @@
                         <span id="overall-progress-text">전체 진행률</span>
                         <span id="overall-progress-count">0/0 완료</span>
                     </div>
-                    <div style="height:8px; background:#e0e0e0; border-radius:4px; overflow:hidden;">
+                    <div style="height:8px; background:#e0e0e0; border-radius:4px; overflow:hidden; display: none;">
                         <div id="overall-progress-bar" style="height:100%; width:0%; background:#28a745; transition:width 0.3s;"></div>
                     </div>
                 </div>
@@ -218,7 +218,6 @@
                     </div>
                     <div class="progress-details">
                         <span class="progress-time" id="progress-timer">0초</span>
-                        <span class="progress-percentage" id="overall-progress-text">0%</span>
                     </div>
                 </div>
                 
@@ -500,6 +499,9 @@
             const query = chatInput.value.trim();
             if (!query) return;
 
+            // 1. 즉시 이전 상태 정리 (동일 질문 시 깨끗한 시작을 위해)
+            resetChatProgress();
+
             appendMessage('user', query);
             chatInput.value = '';
             
@@ -553,11 +555,10 @@
                 let fullResponse = '';
                 let contentSummary = null;
                 let mediaReferences = null;
-                let isCached = false;
                 let markdownTimeout = null;
 
                 // Initialize with first step only
-                updateProgressStep('embedding', '질문을 처리하고 있습니다...', 0);
+                updateChatProgressStep('embedding', '질문을 처리하고 있습니다...');
 
                 let buffer = '';
                 
@@ -589,121 +590,49 @@
                                                 // Skip - already set in initial step
                                             } else if (data.message.includes('캐시에서 답변을 불러오고 있습니다')) {
                                                 // Cached response - immediately complete embedding and move to search
-                                                updateProgressStep('embedding', '캐시 확인 완료!', 100);
-                                                setTimeout(() => updateProgressStep('search', '캐시된 데이터 검색 중...', 50), 50);
+                                                updateChatProgressStep('embedding', '캐시 확인 완료!');
+                                                setTimeout(() => updateChatProgressStep('search', '캐시된 데이터 검색 중...'), 50);
                                             } else if (data.message.includes('LLM으로 답변을 구조화하고 있습니다')) {
                                                 // LLM formatting for cached response
-                                                updateProgressStep('search', '캐시된 데이터 검색 완료!', 100);
-                                                setTimeout(() => updateProgressStep('generate', '💾 캐시된 답변을 구조화하고 있습니다...', 30), 50);
+                                                updateChatProgressStep('search', '캐시된 데이터 검색 완료!');
+                                                setTimeout(() => updateChatProgressStep('generate', '💾 캐시된 답변을 구조화하고 있습니다...'), 50);
                                             } else if (data.message.includes('관련 문서 검색')) {
                                                 // Mark embedding as complete and move to search
-                                                updateProgressStep('embedding', '임베딩 생성 완료!', 100);
-                                                setTimeout(() => updateProgressStep('search', data.message), 300);
+                                                updateChatProgressStep('embedding', '임베딩 생성 완료!');
+                                                setTimeout(() => updateChatProgressStep('search', data.message), 300);
                                             } else if (data.message.includes('답변 생성')) {
                                                 // Mark search as complete and move to generate
-                                                updateProgressStep('search', '문서 검색 완료!', 100);
-                                                setTimeout(() => updateProgressStep('generate', data.message), 300);
+                                                updateChatProgressStep('search', '문서 검색 완료!');
+                                                setTimeout(() => updateChatProgressStep('generate', data.message), 300);
                                             }
                                         } else if (data.type === 'content') {
                                             // First content chunk - ensure we're in generate step
                                             if (fullResponse === '') {
-                                                console.log('First content chunk received:', { cached: data.cached, content: data.content.substring(0, 50) });
-                                                if (data.cached) {
-                                                    // For cached responses, immediately complete all steps
-                                                    updateProgressStep('embedding', '임베딩 완료!', 100);
-                                                    setTimeout(() => {
-                                                        updateProgressStep('search', '검색 완료!', 100);
-                                                        setTimeout(() => {
-                                                            updateProgressStep('generate', '💾 캐시된 답변을 로딩 중...', 60);
-                                                        }, 50);
-                                                    }, 50);
-                                                } else {
-                                                    updateProgressStep('generate', 'AI가 답변을 생성하고 있습니다...');
-                                                }
+                                                console.log('First content chunk received, starting generate step');
+                                                updateChatProgressStep('generate', 'AI가 답변을 생성하고 있습니다...');
                                             }
                                             
                                             // Append content to streaming message
                                             fullResponse += data.content;
-                                            console.log('Content appended, fullResponse length:', fullResponse.length, 'cached:', data.cached);
+                                            console.log('Content appended, fullResponse length:', fullResponse.length);
                                             
-                                            // Update response progress with detailed metrics
-                                            const responseLength = fullResponse.length;
-                                            const wordCount = fullResponse.trim().split(/\s+/).length;
+                                            // 스트리밍 중 깜빡임 완전 방지 - 텍스트만 표시
+                                            messageContent.textContent = fullResponse;
                                             
-                                            if (!data.cached) {
-                                                const estimatedTotal = Math.max(wordCount * 2, 50);
-                                                
-                                                // Only update progress if we have meaningful content
-                                                if (wordCount > 2) {
-                                                    const progress = Math.min((wordCount / estimatedTotal) * 100, 95);
-                                                    updateProgressStep('generate', `AI가 답변을 작성하는 중... (${wordCount}단어)`, progress, {
-                                                        responseLength: responseLength
-                                                    });
-                                                }
-                                            } else {
-                                                // For cached responses, show realistic completion progress
-                                                let progress;
-                                                if (responseLength < 100) {
-                                                    progress = 70;
-                                                } else if (responseLength < 500) {
-                                                    progress = 80;
-                                                } else if (responseLength < 1000) {
-                                                    progress = 90;
-                                                } else {
-                                                    progress = 95;
-                                                }
-                                                updateProgressStep('generate', '💾 캐시된 답변 로딩 중...', progress, {
-                                                    responseLength: responseLength
-                                                });
-                                            }
-                                            
-                                            // Apply markdown formatting with debouncing to reduce flickering
-                                            if (markdownTimeout) {
-                                                clearTimeout(markdownTimeout);
-                                            }
-                                            
-                                            // For cached responses, apply markdown immediately for better formatting
-                                            if (data.cached && window.marked) {
-                                                try {
-                                                    messageContent.innerHTML = window.marked.parse(fullResponse);
-                                                } catch (markdownError) {
-                                                    messageContent.textContent = fullResponse;
-                                                }
-                                            } else {
-                                                // Show text immediately for non-cached responses
-                                                messageContent.textContent = fullResponse;
-                                                
-                                                // Apply markdown after a short delay to reduce flickering
-                                                if (window.marked) {
-                                                    markdownTimeout = setTimeout(() => {
-                                                        try {
-                                                            messageContent.innerHTML = window.marked.parse(fullResponse);
-                                                        } catch (markdownError) {
-                                                            // Keep as text if markdown parsing fails
-                                                            messageContent.textContent = fullResponse;
-                                                        }
-                                                        chatMessages.scrollTop = chatMessages.scrollHeight;
-                                                    }, 100); // 100ms debounce
-                                                }
-                                            }
+                                            // 마크다운 렌더링은 스트리밍 완료 후에만 수행
+                                            // (createEnhancedMultimodalMessage에서 처리됨)
                                             
                                             chatMessages.scrollTop = chatMessages.scrollHeight;
                                             
-                                            if (data.cached) {
-                                                isCached = true;
-                                            }
                                         } else if (data.type === 'final') {
                                             // Store metadata
                                             contentSummary = data.metadata.content_summary;
                                             mediaReferences = data.metadata.media_references;
-                                            isCached = data.metadata.cached;
                                             
-                                            console.log('Final metadata received:', { isCached, contentSummary, mediaReferences });
+                                            console.log('Final metadata received:', { contentSummary, mediaReferences });
                                             
-                                            // For cached responses, complete progress immediately
-                                            if (isCached) {
-                                                updateProgressStep('generate', '💾 캐시된 답변 로딩 완료!', 100);
-                                            }
+                                            // Complete progress in final stage
+                                            updateChatProgressStep('generate', '답변 생성 완료!');
                                         } else if (data.type === 'error') {
                                             throw new Error(data.message);
                                         }
@@ -729,6 +658,11 @@
                 // Remove streaming class and finalize message
                 streamingMessageDiv.classList.remove('streaming');
                 
+                // Complete the generate progress step
+                if (fullResponse) {
+                    updateChatProgressStep('generate', '답변 생성 완료!');
+                }
+                
                 // Clear any pending markdown timeout
                 if (markdownTimeout) {
                     clearTimeout(markdownTimeout);
@@ -738,7 +672,6 @@
                 if (fullResponse) {
                     console.log('Converting to enhanced multimodal message:', {
                         responseLength: fullResponse.length,
-                        isCached: isCached,
                         hasMediaReferences: !!mediaReferences,
                         hasContentSummary: !!contentSummary,
                         streamingDivExists: !!streamingMessageDiv.parentNode
@@ -751,7 +684,7 @@
                         response: fullResponse,
                         media_references: mediaReferences || null,
                         content_summary: contentSummary || null,
-                        cached: isCached
+                        cached: false
                     });
                     
                     // Replace streaming message with enhanced version
@@ -776,10 +709,10 @@
                 chatStatus.className = 'status-message status-success';
                 if (contentSummary) {
                     const summaryText = `텍스트: ${contentSummary.text_chunks || 0}개, 이미지: ${contentSummary.images || 0}개, 표: ${contentSummary.tables || 0}개`;
-                    const cacheIndicator = isCached ? ' (캐시됨)' : '';
+                    const cacheIndicator = '';
                     chatStatus.textContent = `✅ 답변 생성 완료 (${summaryText})${cacheIndicator}`;
                 } else {
-                    const cacheIndicator = isCached ? ' (캐시됨)' : '';
+                    const cacheIndicator = '';
                     chatStatus.textContent = `✅ 답변이 생성되었습니다${cacheIndicator}`;
                 }
                 
@@ -823,8 +756,10 @@
                 chatStatus.className = 'status-message status-error';
                 chatStatus.textContent = errorMessage;
             } finally {
-                // Hide progress indicator and re-enable button
-                hideChatProgress();
+                // Small delay to ensure progress update is visible before hiding
+                setTimeout(() => {
+                    hideChatProgress();
+                }, 500);
                 sendButton.disabled = false;
                 sendButton.innerHTML = '💬 전송';
                 
@@ -885,9 +820,13 @@
                     // Configure marked with enhanced options for better formatting
                     if (window.marked.setOptions) {
                         window.marked.setOptions({
-                            breaks: true,
-                            gfm: true,
-                            tables: true
+                            breaks: true,           // 줄바꿈 처리
+                            gfm: true,             // GitHub Flavored Markdown
+                            tables: true,          // 표 지원
+                            pedantic: false,       // 엄격하지 않은 파싱
+                            sanitize: false,       // HTML 허용
+                            smartLists: true,      // 똑똑한 리스트 처리
+                            smartypants: false     // 따옴표 변환 비활성화
                         });
                     }
                     
@@ -947,10 +886,12 @@
                 }
             }
             
-            // Media references
+            // Media references - 현재 개발 중으로 숨김 처리
+            /* 참조 이미지/표 기능은 현재 개발 중입니다
             if (result.media_references && result.media_references.has_media) {
                 const mediaDiv = document.createElement('div');
                 mediaDiv.classList.add('media-content');
+                mediaDiv.style.display = 'none'; // 임시 숨김
                 
                 // Referenced images
                 if (result.media_references.images && result.media_references.images.length > 0) {
@@ -992,6 +933,7 @@
                 
                 messageDiv.appendChild(mediaDiv);
             }
+            */
             
             return messageDiv;
         }
@@ -1019,38 +961,27 @@
             
             // Auto-progress through query step very quickly
             setTimeout(() => {
-                updateProgressStep('query', '질문 분석 완료!', 100);
+                updateProgressStep('query', '질문 분석 완료!');
             }, 150);
         }
         
-        function updateProgressStep(stepName, message, percentage = null, details = {}) {
+        function updateProgressStep(stepName, message, details = {}) {
+            // Ensure details is always an object
+            if (!details || typeof details !== 'object') {
+                details = {};
+            }
             const progressEl = document.getElementById('chat-progress');
             const progressMainText = document.getElementById('progress-main-text');
             const steps = ['query', 'embedding', 'search', 'generate'];
             
-            console.log(`📊 Progress Update: ${stepName} - ${message} (${percentage || 0}%)`, details);
+            console.log(`📊 Progress Update: ${stepName} - ${message}`, details);
             
             // Update main progress text
             if (progressMainText) {
                 progressMainText.textContent = message;
             }
             
-            // Update overall progress bar
-            const currentIndex = steps.indexOf(stepName);
-            const baseProgress = (currentIndex / steps.length) * 100;
-            const stepProgress = (percentage || 0) / steps.length;
-            const overallProgress = Math.min(baseProgress + stepProgress, 100);
-            
-            const overallProgressBar = document.getElementById('overall-progress-bar');
-            const overallProgressText = document.getElementById('overall-progress-text');
-            if (overallProgressBar) {
-                overallProgressBar.style.width = `${overallProgress}%`;
-            }
-            if (overallProgressText) {
-                overallProgressText.textContent = `${Math.round(overallProgress)}%`;
-            }
-            
-            // Update timer
+            // Update timer (처음에만 시작, 이후에는 유지)
             if (!progressEl.startTime) {
                 progressEl.startTime = Date.now();
                 progressEl.timerInterval = setInterval(() => {
@@ -1063,6 +994,7 @@
             }
             
             // Mark previous steps as completed
+            const currentIndex = steps.indexOf(stepName);
             for (let i = 0; i < currentIndex; i++) {
                 const stepEl = document.querySelector(`[data-step="${steps[i]}"]`);
                 if (stepEl && !stepEl.classList.contains('completed')) {
@@ -1088,16 +1020,12 @@
                 // Update step status
                 const statusEl = document.getElementById(`${stepName}-status`);
                 if (statusEl) {
-                    if (percentage !== null && percentage >= 100) {
-                        statusEl.innerHTML = '<div class="step-check">✓</div>';
-                    } else {
-                        const spinnerHtml = '<div class="step-spinner"></div>';
-                        statusEl.innerHTML = spinnerHtml;
-                    }
+                    const spinnerHtml = '<div class="step-spinner"></div>';
+                    statusEl.innerHTML = spinnerHtml;
                 }
                 
                 // Special handling for generate step
-                if (stepName === 'generate' && details.responseLength) {
+                if (stepName === 'generate' && details && details.responseLength) {
                     const responseLengthEl = document.getElementById('response-length');
                     if (responseLengthEl) {
                         responseLengthEl.textContent = `${details.responseLength}자`;
@@ -1140,11 +1068,43 @@
         }
         
         function updateResponseProgress(wordCount, estimatedTotal) {
-            const percentage = Math.min(Math.round((wordCount / estimatedTotal) * 100), 95);
             const message = `답변 생성 중... (${wordCount}/${estimatedTotal} 단어)`;
-            updateProgressStep('generate', message, percentage);
+            updateChatProgressStep('generate', message);
         }
         
+        // 즉시 진행상황 초기화 함수 (동일 질문 시 깨끗한 시작을 위해)
+        function resetChatProgress() {
+            const progressEl = document.getElementById('chat-progress');
+            if (!progressEl) return;
+            
+            // 즉시 모든 타이머 정리
+            if (progressEl.timerInterval) {
+                clearInterval(progressEl.timerInterval);
+                progressEl.timerInterval = null;
+            }
+            if (progressEl.stepInterval) {
+                clearInterval(progressEl.stepInterval);
+                progressEl.stepInterval = null;
+            }
+            if (progressEl.typingInterval) {
+                clearInterval(progressEl.typingInterval);
+                progressEl.typingInterval = null;
+            }
+            
+            // 즉시 상태 초기화
+            progressEl.classList.remove('active', 'completing');
+            progressEl.startTime = null;
+            
+            // 모든 단계 초기화
+            document.querySelectorAll('.progress-step').forEach(step => {
+                step.classList.remove('active', 'completed', 'pending');
+            });
+            
+            // 진행률 초기화
+            const progressMainText = document.getElementById('progress-main-text');
+            if (progressMainText) progressMainText.textContent = 'AI 답변 생성 중...';
+        }
+
         function hideChatProgress() {
             const progressEl = document.getElementById('chat-progress');
             
@@ -1152,11 +1112,7 @@
             progressEl.classList.add('completing');
             
             // Update final status
-            const overallProgressBar = document.getElementById('overall-progress-bar');
-            const overallProgressText = document.getElementById('overall-progress-text');
             const progressMainText = document.getElementById('progress-main-text');
-            if (overallProgressBar) overallProgressBar.style.width = '100%';
-            if (overallProgressText) overallProgressText.textContent = '100%';
             if (progressMainText) progressMainText.textContent = '답변 생성 완료! 🎉';
             
             // Mark all steps as completed
@@ -1187,22 +1143,25 @@
             setTimeout(() => {
                 progressEl.classList.remove('active', 'completing');
                 
-                // Reset for next use
+                // Reset for next use (동일한 로직을 resetChatProgress로 위임)
                 setTimeout(() => {
-                    document.querySelectorAll('.progress-step').forEach(step => {
-                        step.classList.remove('active', 'completed', 'pending');
-                    });
-                    if (overallProgressBar) overallProgressBar.style.width = '0%';
-                    if (overallProgressText) overallProgressText.textContent = '0%';
-                    if (progressMainText) progressMainText.textContent = 'AI 답변 생성 중...';
-                    const responseLengthEl = document.getElementById('response-length');
-                    if (responseLengthEl) {
-                        responseLengthEl.style.display = 'none';
-                        responseLengthEl.textContent = '0자';
-                    }
-                    progressEl.startTime = null;
+                    resetChatProgress();
                 }, 500);
             }, 1500);
+        }
+
+        // 채팅 전용 진행률 업데이트 함수 (문서 처리와 분리)
+        function updateChatProgressStep(step, message = '', details = {}) {
+            // 채팅 진행률은 문서 처리 진행률과 분리하여 업데이트
+            // 현재는 단순히 기존 함수로 위임하지만, 필요시 별도 UI 요소로 분리 가능
+            if (document.getElementById('progress-container') && 
+                document.getElementById('progress-container').style.display !== 'none') {
+                // 문서 처리 중이면 채팅 진행률 업데이트하지 않음
+                return;
+            }
+            
+            // 문서 처리가 진행 중이 아닐 때만 채팅 진행률 표시
+            updateProgressStep(step, message, 0, details);
         }
 
         // Ollama 상태 및 모델 목록 불러오기
@@ -1685,14 +1644,14 @@
                         filename,
                         status: data.step,
                         progress: actualPercent,
-                        completed: data.step === 'Done' || data.step === 'Error',
+                        completed: data.step === 'Done' || data.step === 'Completed' || data.step === 'Error',
                         startTime: fileInfo.startTime || startTime // 시작 시간 유지
                     });
                     
                     // 전체 진행률 업데이트 (실시간)
                     updateOverallProgressFromFiles();
                     
-                    if (data.step === 'Done' || data.step === 'Error') {
+                    if (data.step === 'Done' || data.step === 'Completed' || data.step === 'Error') {
                         clearInterval(interval);
                         multiFileTracking.intervals.delete(interval);
                         checkAllFilesCompleted();
@@ -1744,14 +1703,18 @@
                 const fileInfo = multiFileTracking.files.get(documentId);
                 fileInfo.progress = displayPercent;
                 fileInfo.status = data.step;
-                fileInfo.completed = data.step === 'Done' || data.step === 'Error';
+                const wasCompleted = fileInfo.completed;
+                fileInfo.completed = data.step === 'Done' || data.step === 'Completed' || data.step === 'Error';
+                if (!wasCompleted && fileInfo.completed) {
+                    console.log(`파일 ${documentId} 완료됨 (상태: ${data.step})`);
+                }
                 multiFileTracking.files.set(documentId, fileInfo);
             }
             
             // 프로세스 단계 업데이트 (상세 정보 포함)
             updateProcessSteps(documentId, data.step, data);
             
-            if (data.step === 'Done') {
+            if (data.step === 'Done' || data.step === 'Completed') {
                 // 완료 상태
                 if (fileCard) {
                     fileCard.className = 'file-progress-card completed';
@@ -1877,6 +1840,7 @@
                     }
                     break;
                 case 'Done':
+                case 'Completed':
                     stepIcon = '✅';
                     if (data.details) {
                         const details = data.details;
@@ -1898,7 +1862,7 @@
             
             // 상태별 CSS 클래스 결정
             let statusClass = 'waiting';
-            if (currentStep === 'Done') {
+            if (currentStep === 'Done' || currentStep === 'Completed') {
                 statusClass = 'completed';
             } else if (currentStep === 'Error') {
                 statusClass = 'error';
@@ -2081,6 +2045,7 @@
             const completedFiles = files.filter(f => f.completed);
             const totalFiles = files.length;
             
+            console.log('checkAllFilesCompleted: 완료된 파일', completedFiles.length, '/ 전체 파일', totalFiles);
             updateOverallProgress(completedFiles.length, totalFiles);
             
             if (completedFiles.length === totalFiles && totalFiles > 0) {
@@ -2097,19 +2062,26 @@
                 
                 // 자동 숨김 설정 확인
                 const autoHide = document.getElementById('auto-hide-progress');
+                console.log('자동 숨김 체크박스 상태:', autoHide ? autoHide.checked : 'not found');
                 if (autoHide && autoHide.checked) {
+                    console.log('자동 숨김 예약 중...');
                     scheduleProgressHide();
+                } else {
+                    console.log('자동 숨김 비활성화됨');
                 }
             }
         }
         
         // 진행률 창 자동 숨김 예약
         function scheduleProgressHide() {
+            console.log('scheduleProgressHide 호출됨 - 10초 후 숨김 예약');
             if (multiFileTracking.hideTimeout) {
                 clearTimeout(multiFileTracking.hideTimeout);
+                console.log('기존 타이머 제거됨');
             }
             
             multiFileTracking.hideTimeout = setTimeout(() => {
+                console.log('자동 숨김 실행 중...');
                 const progressContainer = document.getElementById('progress-container');
                 const selectedFilesContainer = document.getElementById('selected-files-container');
                 
@@ -2174,7 +2146,7 @@
                     const stepInfo = progressSteps.find(s => s.step === data.step) || { percent: 0 };
                     progressBarInner.style.width = stepInfo.percent + '%';
                     progressMessage.textContent = data.message || '';
-                    if(data.step === 'Done') {
+                    if(data.step === 'Done' || data.step === 'Completed') {
                         progressMessage.textContent = '✅ ' + data.message;
                         clearInterval(progressInterval);
                         // 처리 완료 시 문서 목록 자동 새로고침
