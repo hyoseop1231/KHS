@@ -1,0 +1,153 @@
+# Development Docker Compose Configuration
+version: '3.8'
+
+services:
+  # Development version of KITECH Application
+  kitech-app-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: base
+    container_name: kitech-chatbot-dev
+    ports:
+      - "8000:8000"
+    environment:
+      # Development Configuration
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=true
+      
+      # Security Settings (relaxed for development)
+      - SECRET_KEY=dev-secret-key-change-in-production
+      - CORS_ORIGINS=http://localhost:8000,http://127.0.0.1:8000,http://localhost:3000
+      
+      # File Processing
+      - MAX_FILE_SIZE=100
+      - ALLOWED_EXTENSIONS=.pdf,.docx
+      
+      # OCR Settings
+      - OCR_LANGUAGES=kor+eng
+      - OCR_DPI=300
+      - OCR_CORRECTION_ENABLED=true
+      - OCR_MAX_WORKERS=2
+      
+      # LLM Settings (adjust for your local Ollama)
+      - OLLAMA_API_URL=http://host.docker.internal:11434/api/generate
+      - OLLAMA_DEFAULT_MODEL=gemma2:9b
+      - LLM_TEMPERATURE=0.7
+      - LLM_NUM_PREDICT_MULTIMODAL=1536
+      
+      # Database Settings
+      - CHROMA_DATA_PATH=/app/vector_db_data
+      - COLLECTION_NAME=kitech_dev_documents
+      
+      # Performance Settings (reduced for development)
+      - EMBEDDING_BATCH_SIZE=16
+      - CHUNK_SIZE=800
+      - CHUNK_OVERLAP=100
+      
+      # Cache Settings
+      - ENABLE_RESPONSE_CACHE=true
+      - CACHE_TTL_SECONDS=1800
+      - MAX_CACHE_SIZE=50
+      
+      # Logging (more verbose for development)
+      - LOG_LEVEL=DEBUG
+      
+    volumes:
+      # Mount source code for hot reloading
+      - .:/app:ro
+      - /app/__pycache__
+      
+      # Persistent development data
+      - kitech_dev_vector_data:/app/vector_db_data
+      - kitech_dev_uploads:/app/uploads
+      - kitech_dev_logs:/app/logs
+      
+    # Override command for development with auto-reload
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "debug"]
+    
+    restart: "no"  # Don't auto-restart in development
+    
+    # Resource limits (reduced for development)
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+    
+    # Health check (more frequent for development)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 2
+      start_period: 20s
+    
+    depends_on:
+      - redis-dev
+    
+    networks:
+      - kitech-dev-network
+
+  # Redis for development
+  redis-dev:
+    image: redis:7-alpine
+    container_name: kitech-redis-dev
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - kitech_dev_redis_data:/data
+    restart: unless-stopped
+    networks:
+      - kitech-dev-network
+
+  # Development database browser (optional)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: kitech-redis-browser
+    environment:
+      - REDIS_HOSTS=local:redis-dev:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis-dev
+    networks:
+      - kitech-dev-network
+    profiles:
+      - tools
+
+  # Development tools container (optional)
+  dev-tools:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: base
+    container_name: kitech-dev-tools
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: ["tail", "-f", "/dev/null"]  # Keep container running
+    environment:
+      - PYTHONPATH=/app
+    networks:
+      - kitech-dev-network
+    profiles:
+      - tools
+
+# Development-specific volumes
+volumes:
+  kitech_dev_vector_data:
+    driver: local
+  kitech_dev_uploads:
+    driver: local
+  kitech_dev_logs:
+    driver: local
+  kitech_dev_redis_data:
+    driver: local
+
+# Development network
+networks:
+  kitech-dev-network:
+    driver: bridge

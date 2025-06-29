@@ -64,7 +64,7 @@ class TestFileValidator:
         for char in forbidden_chars:
             assert char not in safe
     
-    def test_calculate_file_hash(self, temp_dir):
+    def test_calculate_file_hash(self, tmp_path):
         """Test file hash calculation"""
         test_file = Path(temp_dir) / "test.txt"
         test_file.write_text("test content")

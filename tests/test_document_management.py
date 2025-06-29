@@ -13,7 +13,7 @@ client = TestClient(app)
 
 class TestDocumentManagement:
     
-    @patch('app.services.vector_db_service.delete_document')
+    @patch('app.services.vector_db_service.delete_multimodal_document')
     @patch('app.utils.file_manager.DocumentFileManager.delete_file_by_document_id')
     def test_delete_document_success(self, mock_file_delete, mock_db_delete):
         """Test successful document deletion"""
@@ -30,7 +30,7 @@ class TestDocumentManagement:
         assert data["deleted_from_files"] == True
         assert "deleted successfully" in data["message"]
     
-    @patch('app.services.vector_db_service.delete_document')
+    @patch('app.services.vector_db_service.delete_multimodal_document')
     @patch('app.utils.file_manager.DocumentFileManager.delete_file_by_document_id')
     def test_delete_document_not_found(self, mock_file_delete, mock_db_delete):
         """Test deletion when document doesn't exist"""
@@ -50,12 +50,14 @@ class TestDocumentManagement:
         assert response.status_code == 400
         assert "Invalid document ID" in response.json()["detail"]
     
+    @patch('app.services.vector_db_service.delete_all_multimodal_documents')
     @patch('app.services.vector_db_service.delete_all_documents')
     @patch('app.utils.file_manager.DocumentFileManager.delete_all_files')
-    def test_delete_all_documents_success(self, mock_file_delete_all, mock_db_delete_all):
+    def test_delete_all_documents_success(self, mock_file_delete_all, mock_db_delete_all, mock_multimodal_db_delete_all):
         """Test successful deletion of all documents"""
         # Mock successful deletion
         mock_db_delete_all.return_value = 5  # 5 documents deleted
+        mock_multimodal_db_delete_all.return_value = 5 # 5 multimodal documents deleted
         mock_file_delete_all.return_value = 5  # 5 files deleted
         
         response = client.delete("/api/documents")
@@ -66,15 +68,16 @@ class TestDocumentManagement:
         assert data["deleted_files_count"] == 5
         assert "All documents deleted successfully" in data["message"]
     
-    @patch('app.services.vector_db_service.get_document_info')
+    @patch('app.services.vector_db_service.get_multimodal_document_info')
     @patch('app.utils.file_manager.DocumentFileManager.get_file_info')
     def test_get_document_details_success(self, mock_file_info, mock_db_info):
         """Test getting document details"""
         # Mock document info
         mock_db_info.return_value = {
             "document_id": "test_doc",
-            "chunk_count": 10,
-            "first_chunk_preview": "Test preview"
+            "text_chunks": 10,
+            "images": 2,
+            "tables": 1
         }
         mock_file_info.return_value = {
             "filename": "test_doc_file.pdf",
@@ -86,10 +89,10 @@ class TestDocumentManagement:
         assert response.status_code == 200
         data = response.json()
         assert data["document_id"] == "test_doc"
-        assert data["db_info"]["chunk_count"] == 10
+        assert data["db_info"]["text_chunks"] == 10
         assert data["file_info"]["size_mb"] == 2.5
     
-    @patch('app.services.vector_db_service.get_document_info')
+    @patch('app.services.vector_db_service.get_multimodal_document_info')
     def test_get_document_details_not_found(self, mock_db_info):
         """Test getting details for non-existent document"""
         mock_db_info.return_value = None
@@ -152,7 +155,7 @@ class TestFileManager:
     def test_delete_file_by_document_id(self, temp_dir):
         """Test deleting file by document ID"""
         # Create a test file
-        test_file = os.path.join(temp_dir, "test_doc_123_sample.pdf")
+        test_file = os.path.join(tmp_path, "test_doc_123_sample.pdf")
         with open(test_file, "w") as f:
             f.write("test content")
         
@@ -189,7 +192,7 @@ class TestFileManager:
         orphaned_files = ["orphan1_old.pdf", "orphan2_old.pdf"]
         
         for filename in valid_files + orphaned_files:
-            test_file = os.path.join(temp_dir, filename)
+            test_file = os.path.join(tmp_path, filename)
             with open(test_file, "w") as f:
                 f.write("test content")
         
@@ -205,7 +208,7 @@ class TestFileManager:
             assert "orphan1_old.pdf" not in remaining_files
             assert "orphan2_old.pdf" not in remaining_files
     
-    def test_get_storage_stats(self, temp_dir):
+    def test_get_storage_stats(self, tmp_path):
         """Test getting storage statistics"""
         # Create test files with known sizes
         test_content = "x" * 1024  # 1KB content

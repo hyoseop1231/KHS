@@ -4,11 +4,13 @@ import pytest
 from unittest.mock import Mock, patch
 from app.services.text_processing_service import (
     split_text_into_chunks, 
-    get_embeddings, 
-    correct_foundry_terms,
+    get_embeddings,
     EmbeddingModelManager
 )
+from app.services.ocr_service import correct_foundry_terms
 from app.utils.exceptions import EmbeddingError
+
+import numpy as np
 
 class TestTextSplitting:
     
@@ -28,7 +30,7 @@ class TestTextSplitting:
     def test_split_text_short(self):
         """Test splitting text shorter than chunk size"""
         text = "Short text"
-        chunks = split_text_into_chunks(text, chunk_size=100)
+        chunks = split_text_into_chunks(text, chunk_size=100, chunk_overlap=20)
         
         assert len(chunks) == 1
         assert chunks[0] == text
@@ -40,10 +42,7 @@ class TestFoundryTermCorrection:
         text = "주물 공정에서 몰드를 사용합니다."
         corrected = correct_foundry_terms(text)
         
-        assert "주조" in corrected
-        assert "주형" in corrected
-        assert "주물" not in corrected
-        assert "몰드" not in corrected
+        assert corrected == "주조 공정에서 주형을 사용합니다."
     
     def test_correct_foundry_terms_no_change(self):
         """Test text with no foundry terms"""
@@ -59,7 +58,7 @@ class TestEmbeddingGeneration:
         """Test successful embedding generation"""
         # Mock the model
         mock_model = Mock()
-        mock_model.encode.return_value = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+        mock_model.encode.return_value = np.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
         mock_manager.get_model.return_value = mock_model
         
         text_chunks = ["첫 번째 텍스트", "두 번째 텍스트"]
@@ -80,7 +79,7 @@ class TestEmbeddingGeneration:
         """Test batch processing of embeddings"""
         # Mock the model
         mock_model = Mock()
-        mock_model.encode.return_value = [[0.1, 0.2], [0.3, 0.4]]
+        mock_model.encode.return_value = np.array([[0.1, 0.2], [0.3, 0.4]])
         mock_manager.get_model.return_value = mock_model
         
         # Test with batch_size smaller than input

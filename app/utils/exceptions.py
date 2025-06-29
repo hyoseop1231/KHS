@@ -19,6 +19,10 @@ class EmbeddingError(BaseAppException):
     """Exception raised when embedding generation fails"""
     pass
 
+class TextProcessingError(BaseAppException):
+    """Exception raised when text processing (e.g., chunking, PDF processing) fails"""
+    pass
+
 class VectorDBError(BaseAppException):
     """Exception raised when vector database operations fail"""
     pass

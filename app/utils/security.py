@@ -47,17 +47,34 @@ class FileValidator:
     
     @staticmethod
     def validate_mime_type(file_path: str) -> bool:
-        """Validate MIME type using python-magic"""
+        """Validate MIME type using python-magic or fallback to file signature"""
         if not HAS_MAGIC:
-            logger.warning("python-magic not available, skipping MIME type validation")
-            return True  # Skip validation if magic is not available
+            logger.warning("python-magic not available. Using file signature fallback.")
+            return FileValidator._validate_pdf_signature(file_path)
         
         try:
             mime_type = magic.from_file(file_path, mime=True)
             logger.debug(f"Detected MIME type: {mime_type} for file: {file_path}")
             return mime_type in FileValidator.ALLOWED_MIME_TYPES
         except Exception as e:
-            logger.error(f"Error detecting MIME type for {file_path}: {e}")
+            logger.warning(f"Error detecting MIME type for {file_path}: {e}. Using file signature fallback.")
+            return FileValidator._validate_pdf_signature(file_path)
+    
+    @staticmethod
+    def _validate_pdf_signature(file_path: str) -> bool:
+        """Validate PDF file by checking file signature (magic bytes)"""
+        try:
+            with open(file_path, 'rb') as f:
+                header = f.read(8)
+                # PDF files start with %PDF- (0x255044462D)
+                if header.startswith(b'%PDF-'):
+                    logger.debug(f"Valid PDF signature detected for: {file_path}")
+                    return True
+                else:
+                    logger.warning(f"Invalid PDF signature for: {file_path}. Header: {header[:8]}")
+                    return False
+        except Exception as e:
+            logger.error(f"Error reading file signature for {file_path}: {e}")
             return False
     
     @staticmethod

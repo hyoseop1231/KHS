@@ -1,0 +1,51 @@
+{
+  "last_updated": 1751157476.4766002,
+  "model_count": 5,
+  "models": {
+    "gemma3n:e4b": {
+      "display_name": "gemma3n:e4b",
+      "provider": "알 수 없음",
+      "model_size": "알 수 없음",
+      "specialization": "알 수 없음",
+      "description": "모델 정보를 가져올 수 없습니다.",
+      "strengths": "알 수 없음",
+      "best_for": "알 수 없음"
+    },
+    "mistral:latest": {
+      "display_name": "Mistral Latest",
+      "provider": "Mistral AI",
+      "model_size": "알 수 없음",
+      "specialization": "다국어",
+      "description": "Mistral Latest는 Mistral AI의 대표적인 모델입니다. 다양한 언어로 대화 가능하며, 여러 분야에서 사용할 수 있습니다.",
+      "strengths": "자연어 처리 능력과 일관성있는 답변",
+      "best_for": "인터넷 검색, 질문에 대한 응답, 문장 생성"
+    },
+    "bsahane/Qwen2.5-VL-7B-Instruct:Q4_K_M_benxh": {
+      "display_name": "bsahane/Qwen2.5-VL-7B-Instruct:Q4_K_M_benxh",
+      "provider": "알 수 없음",
+      "model_size": "알 수 없음",
+      "specialization": "알 수 없음",
+      "description": "모델 정보를 가져올 수 없습니다.",
+      "strengths": "알 수 없음",
+      "best_for": "알 수 없음"
+    },
+    "qwen3:30b-a3b": {
+      "display_name": "qwen3:30b-a3b",
+      "provider": "알 수 없음",
+      "model_size": "알 수 없음",
+      "specialization": "알 수 없음",
+      "description": "모델 정보를 가져올 수 없습니다.",
+      "strengths": "알 수 없음",
+      "best_for": "알 수 없음"
+    },
+    "gemma3:27b-it-qat": {
+      "display_name": "gemma3:27b-it-qat",
+      "provider": "알 수 없음",
+      "model_size": "알 수 없음",
+      "specialization": "알 수 없음",
+      "description": "모델 정보를 가져올 수 없습니다.",
+      "strengths": "알 수 없음",
+      "best_for": "알 수 없음"
+    }
+  }
+}

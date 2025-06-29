@@ -1,0 +1,114 @@
+{
+  "categories": {
+    "molding_pattern": {
+      "name": "주형·패턴 (성형)",
+      "terms": [
+        "주형", "Mold", "사형", "Sand mold", "금형", "Metal mold", "코어", "Core", 
+        "코어박스", "Core box", "코어프린트", "Core print", "패턴", "Pattern", 
+        "패턴드래프트", "Draft", "패턴수축", "Pattern-maker's shrinkage", "코프", "Cope", 
+        "드래그", "Drag", "체크", "Cheek", "파팅라인", "Parting line", "플라스크", "Flask", 
+        "바닥판", "Bottom board", "벤트", "Vent", "투수성", "Permeability", 
+        "노베이크", "Nobake process", "쉘몰딩", "Shell mold", "자동성형", "Automatic molding", 
+        "플라스크리스 몰드", "Flaskless mold", "롤오버 몰딩", "Roll-over molding", 
+        "임팩트 몰딩", "Impact molding", "디사매틱", "Disamatic", "헌터 머신", "Hunter", 
+        "스퀴저", "Squeezer", "몰러", "Muller", "샌드 리클레이머", "Sand reclaimer"
+      ]
+    },
+    "gating_pouring": {
+      "name": "주입 · 게이팅",
+      "terms": [
+        "탕구", "Sprue", "러너", "Runner", "게이트", "In-gate", "라이저", "피더", 
+        "Riser", "Feeder", "라이저 슬리브", "Riser sleeve", "초크", "Choke", 
+        "덤 게이트", "Pouring basin", "트랩", "Trap", "필터", "Filter", "냉각쇠", "Chill", 
+        "압탕구", "Feed head", "탕도 시스템", "Gating system", "컵 & 드래그 몰딩", 
+        "Cope-and-Drag molding"
+      ]
+    },
+    "melting_equipment": {
+      "name": "용해 · 설비",
+      "terms": [
+        "쿠폴라", "Cupola", "전로", "Induction furnace", "코어리스 인덕션로", 
+        "Coreless induction furnace", "전기로", "Arc furnace", "가스 리버버레토리", 
+        "Reverberatory furnace", "전기 리버버레토리", "Electric reverb", "회전로", 
+        "Rotary furnace", "진공로", "Vacuum furnace", "슬로핑 드라이 하스 로", 
+        "Sloping dry-hearth", "크루서블", "Crucible", "래들", "Ladle", "불 래들", 
+        "Bull ladle", "홀딩 래들", "Holding ladle", "차지", "Charge", "탭", "Tap", 
+        "플럭스", "Flux", "잉곳", "Ingot", "피그 아이언", "Pig iron", "스크랩", "Scrap", 
+        "용탕 온도", "Pouring temperature"
+      ]
+    },
+    "solidification_heat_treatment": {
+      "name": "응고 · 열처리",
+      "terms": [
+        "응고", "Solidification", "수축", "Shrinkage", "응고 전선", "Solidification front", 
+        "냉각 속도", "Cooling rate", "멜트백", "Melt-back", "핫 스팟", "Hot spot", 
+        "냉금열균열", "Hot tear", "Hot crack", "콜드 셧", "Cold shut", "열피로", 
+        "Thermal fatigue", "퀜칭", "Quench", "어닐링", "Annealing", "노말라이징", 
+        "Normalizing", "템퍼링", "Temper", "스트레스 릴리빙", "Stress-relieving", 
+        "에이징", "Aging", "재결정", "Recrystallization"
+      ]
+    },
+    "defects_inspection_quality": {
+      "name": "결함 · 검사·품질",
+      "terms": [
+        "기공", "Porosity", "가스 기공", "Gas porosity", "핀홀", "Pinhole", "수축 공", 
+        "수축 기공", "Shrinkage cavity", "Shrinkage porosity", "슬래그 포함", 
+        "Slag inclusion", "샌드 인클루전", "Sand inclusion", "벌온 샌드", "Burn-on sand", 
+        "미주입", "Incomplete fill", "핫 톱", "Hot top", "크랙", "Crack", "식힘 라인", 
+        "Chill line", "비파괴검사", "NDT", "초음파검사", "UT", "방사선검사", "RT", 
+        "자분탐상", "MT", "침투탐상", "PT", "스펙트럼 분석", "Spectrometer", 
+        "경도시험", "Hardness test", "인장시험", "Tensile test", "AQL", 
+        "Acceptable Quality Level", "수율", "Recovery rate", "불량률", "Reject rate"
+      ]
+    },
+    "post_processing": {
+      "name": "후처리 · 가공",
+      "terms": [
+        "셰이크아웃", "Shake-out", "쇼트 블라스트", "Shot blasting", "그라인딩", 
+        "스내깅", "Grinding", "Snagging", "트리밍", "Trimming", "디버링", "Deburring", 
+        "컷오프", "Cut-off", "드릴링", "Drilling", "리밍", "Reaming", "머신가공", 
+        "Machining", "표면 도장", "Coating", "열처리 로딩", "Heat-treat loading"
+      ]
+    },
+    "special_processes": {
+      "name": "특수 공정·기법",
+      "terms": [
+        "사형 주조", "Sand casting", "다이 캐스팅", "Die casting", "중력 주조", 
+        "Gravity casting", "저압 주조", "Low-pressure casting", "고압 주조", 
+        "High-pressure die casting", "원심 주조", "Centrifugal casting", "연속 주조", 
+        "Continuous casting", "로스트왁스", "투하주조", "Investment casting", "Lost-wax", 
+        "슬러시 캐스팅", "Slosh casting", "세라믹 몰드 주조", "Ceramic mold casting", 
+        "진공 주조", "Vacuum casting", "3D 프린트 모래 주조", "Binder-jet casting", 
+        "주조 시뮬레이션", "Casting simulation", "유동 해석", "Mold-flow analysis"
+      ]
+    },
+    "general_management": {
+      "name": "기타 기초·관리",
+      "terms": [
+        "파운드리", "Foundry", "주물", "Casting", "본더 시스템", "Binder system", 
+        "파운드리 리턴", "Foundry returns", "모울드 코팅", "Mold coating", "Core wash", 
+        "그린샌드", "Green sand", "백킹샌드", "Backing sand", "리프랙토리", "Refractory", 
+        "가스 퍼미에빌리티", "Gas permeability", "생산 일정", "Heat", "Lot", 
+        "공정 제어", "Process control", "환경안전", "EHS", "집진", "Dust collection", 
+        "방열복", "Heat-resistant gear"
+      ]
+    }
+  },
+  "common_ocr_errors": {
+    "주형": ["주헝", "주현", "주횽"],
+    "사형": ["사헝", "사횽", "상형"],
+    "금형": ["금헝", "금횽", "급형"],
+    "코어": ["고어", "코어", "쿄어"],
+    "패턴": ["퍽턴", "팰턴", "패던"],
+    "주조": ["주조", "주초", "죽조"],
+    "용해": ["웅해", "용혜", "융해"],
+    "응고": ["옹고", "응교", "응귀"],
+    "수축": ["숙축", "쉬축", "수죽"],
+    "기공": ["끼공", "끼곰", "기곰"],
+    "크랙": ["그랙", "크락", "클락"],
+    "래들": ["레들", "레딀", "랜들"],
+    "플럭스": ["플럭쓰", "플력스", "플런스"],
+    "몰딩": ["몬딩", "몰링", "몰든"],
+    "캐스팅": ["캐스딩", "케스팅", "캐쓰팅"]
+  }
+}

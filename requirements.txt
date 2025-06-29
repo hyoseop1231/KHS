@@ -1,19 +1,44 @@
+# Core Framework
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
-python-multipart # For file uploads
-jinja2 # For HTML templates
-PyMuPDF # For PDF processing
-pytesseract # For OCR
-Pillow # Pytesseract dependency for image manipulation
-sentence-transformers>=2.2.0 # For text embeddings
-langchain>=0.0.350 # For text splitting and other LLM utilities
-chromadb>=0.4.15 # For vector database
-requests # For HTTP requests to Ollama API
-python-magic # For MIME type detection (optional)
-python-dotenv # For environment variable management
-opencv-python>=4.8.0 # For image processing and table detection
-pandas>=2.0.0 # For table data processing
+
+# Web & API
+python-multipart>=0.0.6 # For file uploads
+jinja2>=3.1.0 # For HTML templates
+aiohttp>=3.8.0 # For async HTTP requests
+requests>=2.31.0 # For HTTP requests to Ollama API
+
+# PDF & Document Processing
+PyMuPDF>=1.23.0 # For PDF processing and extraction
+pytesseract>=0.3.10 # For OCR text recognition
+Pillow>=10.0.0 # Image processing for OCR
+opencv-python>=4.8.0 # Advanced image processing and table detection
+
+# AI & Machine Learning
+sentence-transformers>=2.2.0 # For text embeddings generation
+langchain>=0.0.350 # For text splitting and chunking
+chromadb>=0.4.15 # Vector database for RAG
+
+# Data Processing
+pandas>=2.0.0 # For table data processing and manipulation
 numpy>=1.24.0 # For numerical operations
-pytest # For testing
-pytest-asyncio # For async testing
-pytest-cov # For test coverage
+
+# System & Monitoring
+psutil>=5.9.0 # For system monitoring and memory optimization
+python-dotenv>=1.0.0 # For environment variable management
+python-magic>=0.4.27 # For MIME type detection (optional)
+
+# Testing & Development
+pytest>=7.4.0 # For unit testing
+pytest-asyncio>=0.21.0 # For async testing support
+pytest-cov>=4.1.0 # For test coverage reporting
+
+# Security & Performance (Production)
+gunicorn>=21.2.0 # Production WSGI server alternative
+watchdog>=3.0.0 # For file monitoring in development
+
+# Optional Dependencies for Enhanced Features
+# Uncomment if needed:
+# redis>=5.0.0 # For advanced caching (optional)
+# celery>=5.3.0 # For background task processing (optional)
+# pydantic-settings>=2.0.0 # For advanced configuration management

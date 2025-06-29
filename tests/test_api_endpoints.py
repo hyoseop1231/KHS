@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch, AsyncMock
 from app.main import app
 from app.api.endpoints import ChatRequest
 
-client = TestClient(app)
+client = TestClient(app, base_url="http://localhost")
 
 class TestUploadEndpoint:
     
@@ -27,7 +27,13 @@ class TestUploadEndpoint:
         
         response = client.post(
             "/api/upload_pdf/",
-            files={"file": ("test.pdf", test_pdf_content, "application/pdf")}
+            files={
+                "files": ("test.pdf", test_pdf_content, "application/pdf")
+            },
+            data={
+                "ocr_correction_enabled": "false",
+                "llm_correction_enabled": "false"
+            }
         )
         
         assert response.status_code == 202
@@ -42,7 +48,13 @@ class TestUploadEndpoint:
         
         response = client.post(
             "/api/upload_pdf/",
-            files={"file": ("test.txt", test_content, "text/plain")}
+            files={
+                "files": ("test.txt", test_content, "text/plain")
+            },
+            data={
+                "ocr_correction_enabled": "false",
+                "llm_correction_enabled": "false"
+            }
         )
         
         assert response.status_code == 400
@@ -52,7 +64,13 @@ class TestUploadEndpoint:
         """Test upload with empty file"""
         response = client.post(
             "/api/upload_pdf/",
-            files={"file": ("test.pdf", b"", "application/pdf")}
+            files={
+                "files": ("test.pdf", b"", "application/pdf")
+            },
+            data={
+                "ocr_correction_enabled": "false",
+                "llm_correction_enabled": "false"
+            }
         )
         
         assert response.status_code == 400
@@ -72,7 +90,13 @@ class TestUploadEndpoint:
         
         response = client.post(
             "/api/upload_pdf/",
-            files={"file": ("test.pdf", test_pdf_content, "application/pdf")}
+            files={
+                "files": ("test.pdf", test_pdf_content, "application/pdf")
+            },
+            data={
+                "ocr_correction_enabled": "false",
+                "llm_correction_enabled": "false"
+            }
         )
         
         assert response.status_code == 400
@@ -81,7 +105,7 @@ class TestUploadEndpoint:
 class TestChatEndpoint:
     
     @patch('app.api.endpoints.get_embeddings')
-    @patch('app.api.endpoints.search_similar_vectors')
+    @patch('app.services.vector_db_service.search_multimodal_content')
     @patch('app.api.endpoints.process_llm_chat_request')
     def test_chat_success(self, mock_llm, mock_search, mock_embeddings):
         """Test successful chat request"""
@@ -144,7 +168,7 @@ class TestChatEndpoint:
         # This test ensures sanitize_input is called
         with patch('app.api.endpoints.get_embeddings') as mock_embeddings:
             mock_embeddings.return_value = [[0.1, 0.2, 0.3]]
-            with patch('app.api.endpoints.search_similar_vectors') as mock_search:
+            with patch('app.services.vector_db_service.search_multimodal_content') as mock_search:
                 mock_search.return_value = []
                 with patch('app.api.endpoints.process_llm_chat_request') as mock_llm:
                     mock_llm.return_value = "response"
@@ -199,4 +223,4 @@ class TestStatusEndpoints:
         
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "not running"
+        assert data["status"] == "unreachable"

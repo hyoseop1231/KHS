@@ -1,6 +1,9 @@
 import chromadb
 import os
-from typing import List, Dict, Any
+import json
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Dict, Any, Optional
 from app.config import settings
 from app.utils.logging_config import get_logger
 from app.utils.exceptions import VectorDBError
@@ -8,127 +11,343 @@ from app.utils.exceptions import VectorDBError
 logger = get_logger(__name__)
 
 # ChromaDB 클라이언트 초기화
+# ChromaDB 클라이언트 초기화
 try:
     client = chromadb.PersistentClient(path=settings.CHROMA_DATA_PATH)
     logger.info(f"ChromaDB client initialized at: {settings.CHROMA_DATA_PATH}")
 except Exception as e:
-    logger.error(f"Error initializing ChromaDB PersistentClient at '{settings.CHROMA_DATA_PATH}': {e}")
-    client = None
+    error_msg = f"Error initializing ChromaDB PersistentClient at '{settings.CHROMA_DATA_PATH}': {e}"
+    logger.error(error_msg)
+    raise VectorDBError(error_msg, "DB_INIT_ERROR") # Raise error immediately
 
-# 컬렉션 가져오기 또는 생성
+# 컬렉션들 가져오기 또는 생성
 try:
-    if client:
-        collection = client.get_or_create_collection(
-            name=settings.COLLECTION_NAME,
-        )
-        logger.info(f"ChromaDB collection '{settings.COLLECTION_NAME}' loaded/created successfully")
-    else:
-        collection = None
-        logger.error("ChromaDB client is not available. Collection cannot be loaded/created.")
+    # Text collection
+    text_collection = client.get_or_create_collection(
+        name=settings.COLLECTION_NAME,
+    )
+    
+    # Images collection
+    images_collection = client.get_or_create_collection(
+        name=f"{settings.COLLECTION_NAME}_images",
+    )
+    
+    # Tables collection
+    tables_collection = client.get_or_create_collection(
+        name=f"{settings.COLLECTION_NAME}_tables",
+    )
+    
+    logger.info(f"ChromaDB collections loaded/created successfully")
+    logger.info(f"  - Text: '{settings.COLLECTION_NAME}'")
+    logger.info(f"  - Images: '{settings.COLLECTION_NAME}_images'")
+    logger.info(f"  - Tables: '{settings.COLLECTION_NAME}_tables'")
 except Exception as e:
-    collection = None
-    logger.error(f"Error getting or creating ChromaDB collection '{settings.COLLECTION_NAME}': {e}")
+    error_msg = f"Error getting or creating ChromaDB collections: {e}"
+    logger.error(error_msg)
+    raise VectorDBError(error_msg, "COLLECTION_INIT_ERROR") # Raise error immediately
 
+# Backward compatibility (for existing code that uses 'collection')
+collection = text_collection
 
-def store_vectors(document_id: str, text_chunks: List[str], vectors: List[List[float]], metadatas: List[Dict[str, Any]] = None):
+def store_multimodal_content(document_id: str, content_data: Dict[str, Any], text_vectors: Optional[List[List[float]]] = None, text_metadatas: Optional[List[Dict[str, Any]]] = None):
     """
-    Stores text chunks, their corresponding vectors, and metadatas in the ChromaDB collection.
-
+    Stores all types of content (text, images, tables) into their respective collections.
     Args:
-        document_id (str): A unique identifier for the source document (e.g., PDF filename).
-        text_chunks (List[str]): The list of text chunks (documents in ChromaDB terms).
-        vectors (List[List[float]]): The list of vector embeddings corresponding to text_chunks.
-        metadatas (List[Dict[str, Any]], optional): A list of dictionaries containing metadata for each chunk.
-                                                    Each metadata dict should include at least {'source_document_id': document_id, 'chunk_index': i}.
-                                                    Defaults to None, in which case basic metadata is generated.
+        document_id (str): A unique identifier for the source document.
+        content_data (Dict[str, Any]): Dictionary containing 'text_chunks', 'images', 'tables'.
+        text_vectors (List[List[float]], optional): Vector embeddings for text chunks.
+        text_metadatas (List[Dict[str, Any]], optional): Metadata for text chunks.
     """
-    if not collection:
-        logger.error("ChromaDB collection is not available. Cannot store vectors.")
-        raise VectorDBError("ChromaDB collection not available", "COLLECTION_UNAVAILABLE")
+    try:
+        # 1. Store text content
+        if text_collection and text_vectors:
+            text_chunks = content_data.get('text_chunks', [])
+            if text_chunks:
+                # Ensure all lists have the same length
+                min_len = min(len(text_chunks), len(text_vectors), len(text_metadatas) if text_metadatas else len(text_chunks))
+                
+                valid_chunks = text_chunks[:min_len]
+                valid_vectors = text_vectors[:min_len]
+                valid_metadatas = text_metadatas[:min_len] if text_metadatas else None
+                
+                if valid_chunks and valid_vectors:
+                    store_text_vectors(document_id, valid_chunks, valid_vectors, valid_metadatas)
+                    logger.info(f"Stored {len(valid_chunks)} text chunks for document: {document_id}")
+
+        # 2. Store images
+        if images_collection:
+            images_data = content_data.get('images', [])
+            if images_data:
+                store_images(document_id, images_data)
+                logger.info(f"Stored {len(images_data)} images for document: {document_id}")
+
+        # 3. Store tables
+        if tables_collection:
+            tables_data = content_data.get('tables', [])
+            if tables_data:
+                store_tables(document_id, tables_data)
+                logger.info(f"Stored {len(tables_data)} tables for document: {document_id}")
+
+        logger.info(f"Successfully stored multimodal content for document: {document_id}")
+
+    except Exception as e:
+        logger.error(f"Error storing multimodal content for {document_id}: {e}")
+        raise VectorDBError(f"Failed to store multimodal content: {e}", "STORE_ERROR")
+
+def store_text_vectors(document_id: str, text_chunks: List[str], vectors: List[List[float]], metadatas: List[Dict[str, Any]] = None):
+    """
+    Stores text chunks and their vectors in the text collection.
+    """
+    if not text_collection:
+        logger.error("Text collection is not available. Cannot store vectors.")
+        raise VectorDBError("Text collection not available", "COLLECTION_UNAVAILABLE")
 
     if not text_chunks or not vectors:
         logger.error("Text chunks or vectors are empty. Nothing to store.")
-        raise VectorDBError("Empty text chunks or vectors", "EMPTY_INPUT")
+        raise VectorDBError("Empty text chunks or vectors", "EMPTY_DATA")
 
     if len(text_chunks) != len(vectors):
-        logger.error(f"Mismatch: {len(text_chunks)} text chunks vs {len(vectors)} vectors")
-        raise VectorDBError("Text chunks and vectors count mismatch", "COUNT_MISMATCH")
+        logger.error(f"Mismatch between text chunks ({len(text_chunks)}) and vectors ({len(vectors)}) count.")
+        raise VectorDBError("Text chunks and vectors count mismatch", "SIZE_MISMATCH")
 
-    if metadatas and len(text_chunks) != len(metadatas):
-        logger.error(f"Metadata count mismatch: {len(metadatas)} vs {len(text_chunks)}")
-        raise VectorDBError("Metadata count mismatch", "METADATA_MISMATCH")
+    if metadatas and len(metadatas) != len(text_chunks):
+        logger.error(f"Mismatch between text chunks ({len(text_chunks)}) and metadatas ({len(metadatas)}) count.")
+        raise VectorDBError("Text chunks and metadatas count mismatch", "METADATA_SIZE_MISMATCH")
 
-    ids = []
-    generated_metadatas = []
-    for i, chunk in enumerate(text_chunks):
-        chunk_id = f"{document_id}_chunk_{i}"
-        ids.append(chunk_id)
-        if metadatas:
-            # 사용자가 제공한 메타데이터에 기본 정보를 추가하거나 확인
-            current_meta = metadatas[i]
-            current_meta.setdefault('source_document_id', document_id)
-            current_meta.setdefault('chunk_index', i)
-            generated_metadatas.append(current_meta)
-        else:
-            generated_metadatas.append({
+    # If no metadatas provided, create basic ones
+    if not metadatas:
+        metadatas = [
+            {
                 'source_document_id': document_id,
                 'chunk_index': i,
-                'original_text_preview': chunk[:200] # 미리보기용 원본 텍스트 일부
-            })
+                'content_type': 'text',
+                'original_text_preview': chunk[:200]
+            }
+            for i, chunk in enumerate(text_chunks)
+        ]
+    else:
+        # Ensure content_type is set
+        for meta in metadatas:
+            meta['content_type'] = 'text'
+
+    # Generate unique IDs for each chunk
+    ids = [f"{document_id}_text_chunk_{i}" for i in range(len(text_chunks))]
 
     try:
-        collection.add(
+        text_collection.add(
             embeddings=vectors,
-            documents=text_chunks, # 원본 텍스트 청크도 함께 저장
-            metadatas=generated_metadatas,
+            documents=text_chunks,
+            metadatas=metadatas,
             ids=ids
         )
-        logger.info(f"Stored {len(vectors)} vectors for document '{document_id}' in collection '{settings.COLLECTION_NAME}'")
+        logger.info(f"Successfully stored {len(text_chunks)} text chunks for document '{document_id}'")
+        
     except Exception as e:
         logger.error(f"Error storing vectors in ChromaDB for document '{document_id}': {e}")
-        raise VectorDBError(f"Failed to store vectors: {e}", "STORE_ERROR")
+        raise VectorDBError(f"Failed to store vectors: {e}", "CHROMADB_STORE_ERROR")
 
-
-def search_similar_vectors(query_vector: List[float], top_k: int = 5, filter_metadata: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+def store_images(document_id: str, images_data: List[Dict[str, Any]]):
     """
-    Searches for text chunks with vectors similar to the query_vector in the ChromaDB collection.
+    Stores image metadata and descriptions in the images collection.
+    """
+    if not images_collection:
+        logger.error("Images collection is not available.")
+        raise VectorDBError("Images collection not available", "COLLECTION_UNAVAILABLE")
+    
+    if not images_data:
+        logger.info(f"No images to store for document: {document_id}")
+        return
+    
+    try:
+        # Prepare data for storage
+        ids = []
+        documents = []  # Image descriptions
+        metadatas = []
+        
+        for i, img_data in enumerate(images_data):
+            img_id = f"{document_id}_image_{i}"
+            img_description = img_data.get('description', f"Image from page {img_data.get('page', 'unknown')}")
+            
+            metadata = {
+                'source_document_id': document_id,
+                'content_type': 'image',
+                'filename': img_data.get('filename', ''),
+                'page': img_data.get('page', 0),
+                'index': img_data.get('index', i),
+                'width': img_data.get('width', 0),
+                'height': img_data.get('height', 0),
+                'size_bytes': img_data.get('size_bytes', 0),
+                'file_path': img_data.get('path', '')
+            }
+            
+            ids.append(img_id)
+            documents.append(img_description)
+            metadatas.append(metadata)
+        
+        # Store in ChromaDB (without embeddings for now - could add image embeddings later)
+        images_collection.add(
+            documents=documents,
+            metadatas=metadatas,
+            ids=ids
+        )
+        
+        logger.info(f"Successfully stored {len(images_data)} images for document '{document_id}'")
+        
+    except Exception as e:
+        logger.error(f"Error storing images for document '{document_id}': {e}")
+        raise VectorDBError(f"Failed to store images: {e}", "IMAGES_STORE_ERROR")
+
+def store_tables(document_id: str, tables_data: List[Dict[str, Any]]):
+    """
+    Stores table metadata and content in the tables collection.
+    """
+    if not tables_collection:
+        logger.error("Tables collection is not available.")
+        raise VectorDBError("Tables collection not available", "COLLECTION_UNAVAILABLE")
+    
+    if not tables_data:
+        logger.info(f"No tables to store for document: {document_id}")
+        return
+    
+    try:
+        # Prepare data for storage
+        ids = []
+        documents = []  # Table content as text
+        metadatas = []
+        
+        for i, table_data in enumerate(tables_data):
+            table_id = f"{document_id}_table_{i}"
+            
+            # Convert table data to searchable text
+            table_text = table_data.get('raw_text', '')
+            parsed_data = table_data.get('parsed_data', [])
+            
+            # Create a structured text representation
+            if parsed_data:
+                structured_text = []
+                for row in parsed_data:
+                    if isinstance(row, list):
+                        structured_text.append(' | '.join(str(cell) for cell in row))
+                table_content = '\n'.join(structured_text)
+            else:
+                table_content = table_text
+            
+            metadata = {
+                'source_document_id': document_id,
+                'content_type': 'table',
+                'filename': table_data.get('filename', ''),
+                'page': table_data.get('page', 0),
+                'index': table_data.get('index', i),
+                'x': table_data.get('x', 0),
+                'y': table_data.get('y', 0),
+                'width': table_data.get('width', 0),
+                'height': table_data.get('height', 0),
+                'size_bytes': table_data.get('size_bytes', 0),
+                'file_path': table_data.get('path', ''),
+                'raw_text': table_text,
+                'parsed_data': json.dumps(parsed_data) if parsed_data else ''
+            }
+            
+            ids.append(table_id)
+            documents.append(table_content or f"Table from page {table_data.get('page', 'unknown')}")
+            metadatas.append(metadata)
+        
+        # Store in ChromaDB
+        tables_collection.add(
+            documents=documents,
+            metadatas=metadatas,
+            ids=ids
+        )
+        
+        logger.info(f"Successfully stored {len(tables_data)} tables for document '{document_id}'")
+        
+    except Exception as e:
+        logger.error(f"Error storing tables for document '{document_id}': {e}")
+        raise VectorDBError(f"Failed to store tables: {e}", "TABLES_STORE_ERROR")
+
+def search_multimodal_content(
+    query_vector: List[float],
+    top_k: int = 5,
+    doc_ids: Optional[List[str]] = None,
+    filter_metadata: Optional[Dict[str, Any]] = None,
+    include_images: bool = True,
+    include_tables: bool = True
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Searches across content types (text, images, tables) for relevant information.
 
     Args:
         query_vector (List[float]): The vector representation of the user's query.
-        top_k (int, optional): The number of similar results to return. Defaults to 5.
-        filter_metadata (Dict[str, Any], optional): A dictionary to filter results based on metadata.
-                                                  Example: {"source_document_id": "specific_doc.pdf"}
-                                                  Defaults to None (no filtering).
+        top_k (int, optional): Number of results to return per content type. Defaults to 5.
+        doc_ids (Optional[List[str]]): List of document IDs to filter by. If set and filter_metadata is None,
+            filters by these IDs. Ignored if filter_metadata is provided.
+        filter_metadata (Optional[Dict[str, Any]]): Explicit metadata filter dict. Takes precedence over doc_ids.
+        include_images (bool): Whether to include image search results. Defaults to True.
+        include_tables (bool): Whether to include table search results. Defaults to True.
 
     Returns:
-        List[Dict[str, Any]]: A list of search results. Each result is a dictionary containing
-                              'id', 'text' (document content), 'metadata', and 'distance' (or 'score').
+        Dict[str, List[Dict[str, Any]]]: Keys 'text', 'images', 'tables' mapping to respective results.
     """
-    if not collection:
-        logger.error("ChromaDB collection is not available. Cannot search vectors.")
-        raise VectorDBError("ChromaDB collection not available", "COLLECTION_UNAVAILABLE")
-
-    if not query_vector:
-        logger.error("Query vector is empty. Cannot perform search.")
-        raise VectorDBError("Empty query vector", "EMPTY_QUERY_VECTOR")
+    results = {'text': [], 'images': [], 'tables': []}
+    # Determine metadata filter: explicit filter_metadata wins, else doc_ids filter
+    meta_filter = filter_metadata if filter_metadata is not None else (
+        {"source_document_id": {"$in": doc_ids}} if doc_ids else None
+    )
 
     try:
-        logger.debug(f"Searching for {top_k} similar vectors in '{settings.COLLECTION_NAME}'")
-        if filter_metadata:
-            logger.debug(f"Applying metadata filter: {filter_metadata}")
+        # 병렬 검색을 위한 ThreadPoolExecutor 사용
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {}
+            
+            # Text search (vector similarity) - 비동기 실행
+            if text_collection and query_vector:
+                futures['text'] = executor.submit(search_text_vectors, query_vector, top_k, meta_filter)
+            
+            # Image search (metadata-only) - 비동기 실행
+            if include_images and images_collection:
+                futures['images'] = executor.submit(search_images, meta_filter, top_k)
+            
+            # Table search (metadata-only) - 비동기 실행
+            if include_tables and tables_collection:
+                futures['tables'] = executor.submit(search_tables, meta_filter, top_k)
+            
+            # 결과 수집
+            for search_type, future in futures.items():
+                try:
+                    results[search_type] = future.result(timeout=30)  # 30초 타임아웃
+                except Exception as e:
+                    logger.warning(f"Error in {search_type} search: {e}")
+                    results[search_type] = []
+                    
+    except Exception as e:
+        logger.error(f"Error in multimodal search: {e}")
+        raise VectorDBError(f"Multimodal search failed: {e}", "SEARCH_ERROR")
+    return results
 
-        results = collection.query(
-            query_embeddings=[query_vector], # query_embeddings는 리스트의 리스트 형태여야 함
+def search_text_vectors(query_vector: List[float], top_k: int = 5, filter_metadata: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    """
+    Searches for text chunks with vectors similar to the query_vector.
+    """
+    if not text_collection:
+        logger.error("Text collection is not available. Cannot search vectors.")
+        raise VectorDBError("Text collection not available", "COLLECTION_UNAVAILABLE")
+
+    if not query_vector:
+        logger.error("Query vector is empty or None.")
+        raise VectorDBError("Query vector is empty", "EMPTY_QUERY_VECTOR")
+
+    try:
+        # Perform similarity search
+        where_clause = filter_metadata if filter_metadata else None
+        
+        results = text_collection.query(
+            query_embeddings=[query_vector],
             n_results=top_k,
-            where=filter_metadata if filter_metadata else None, # 메타데이터 필터링 조건 (빈 dict이면 None)
-            include=['documents', 'metadatas', 'distances'] # 반환할 정보: 원본 텍스트, 메타데이터, 거리
+            where=where_clause,
+            include=['documents', 'metadatas', 'distances']
         )
-
-        # 결과 형식 재구성 (필요에 따라)
-        # ChromaDB의 query 결과는 약간 복잡한 구조를 가질 수 있습니다.
-        # 예: {'ids': [['id1', 'id2']], 'documents': [['doc1', 'doc2']], ...}
-        # 이를 사용하기 쉬운 형태로 변환합니다.
-
+        
+        # Format results
         formatted_results = []
         if results and results.get('ids') and results.get('ids')[0]:
             ids = results['ids'][0]
@@ -143,28 +362,98 @@ def search_similar_vectors(query_vector: List[float], top_k: int = 5, filter_met
                     "metadata": metadatas[i],
                     "distance": distances[i] # 거리가 짧을수록 유사함
                 })
-            logger.debug(f"Found {len(formatted_results)} search results")
-        else:
-            logger.debug("No results found or empty result set")
-
+        
+        logger.info(f"Found {len(formatted_results)} similar text chunks")
         return formatted_results
-
+        
     except Exception as e:
-        logger.error(f"Error searching vectors in ChromaDB: {e}")
-        raise VectorDBError(f"Search failed: {e}", "SEARCH_ERROR")
+        logger.error(f"Error searching similar vectors: {e}")
+        raise VectorDBError(f"Vector search failed: {e}", "SEARCH_ERROR")
+
+def search_images(filter_metadata: Dict[str, Any] = None, top_k: int = 5) -> List[Dict[str, Any]]:
+    """
+    Searches for relevant images based on metadata filters.
+    """
+    if not images_collection:
+        logger.warning("Images collection is not available.")
+        return []
+    
+    try:
+        where_clause = filter_metadata if filter_metadata else None
+        
+        results = images_collection.get(
+            where=where_clause,
+            limit=top_k,
+            include=['documents', 'metadatas']
+        )
+        
+        # Format results
+        formatted_results = []
+        if results and results.get('ids'):
+            for i in range(len(results['ids'])):
+                formatted_results.append({
+                    'id': results['ids'][i],
+                    'description': results['documents'][i],
+                    'metadata': results['metadatas'][i]
+                })
+        
+        logger.info(f"Found {len(formatted_results)} relevant images")
+        return formatted_results
+        
+    except Exception as e:
+        logger.error(f"Error searching images: {e}")
+        return []
+
+def search_tables(filter_metadata: Dict[str, Any] = None, top_k: int = 5) -> List[Dict[str, Any]]:
+    """
+    Searches for relevant tables based on metadata filters.
+    """
+    if not tables_collection:
+        logger.warning("Tables collection is not available.")
+        return []
+    
+    try:
+        where_clause = filter_metadata if filter_metadata else None
+        
+        results = tables_collection.get(
+            where=where_clause,
+            limit=top_k,
+            include=['documents', 'metadatas']
+        )
+        
+        # Format results
+        formatted_results = []
+        if results and results.get('ids'):
+            for i in range(len(results['ids'])):
+                metadata = results['metadatas'][i]
+                parsed_data = json.loads(metadata.get('parsed_data', '[]')) if metadata.get('parsed_data') else []
+                
+                formatted_results.append({
+                    'id': results['ids'][i],
+                    'content': results['documents'][i],
+                    'metadata': metadata,
+                    'parsed_data': parsed_data
+                })
+        
+        logger.info(f"Found {len(formatted_results)} relevant tables")
+        return formatted_results
+        
+    except Exception as e:
+        logger.error(f"Error searching tables: {e}")
+        return []
 
 def get_all_documents() -> List[Dict[str, Any]]:
     """
     ChromaDB에 저장된 모든 문서(document_id, 파일명 등) 목록을 반환합니다.
     각 문서는 source_document_id 기준으로 그룹화되며, 미리보기 텍스트와 청크 개수 등도 포함할 수 있습니다.
     """
-    if not collection:
-        logger.error("ChromaDB collection is not available. Cannot get documents.")
-        raise VectorDBError("ChromaDB collection not available", "COLLECTION_UNAVAILABLE")
+    if not text_collection:
+        logger.error("Text collection is not available. Cannot get documents.")
+        raise VectorDBError("Text collection not available", "COLLECTION_UNAVAILABLE")
     
     try:
         # 모든 메타데이터만 쿼리 (최대 10000개 제한)
-        results = collection.get(include=["metadatas"], limit=10000)
+        results = text_collection.get(include=["metadatas"], limit=10000)
         metadatas = results.get("metadatas", [])
         # source_document_id별로 그룹화
         doc_map = {}
@@ -195,35 +484,7 @@ def delete_document(document_id: str) -> bool:
     Returns:
         bool: 삭제 성공 여부
     """
-    if not collection:
-        logger.error("ChromaDB collection is not available. Cannot delete document.")
-        raise VectorDBError("ChromaDB collection not available", "COLLECTION_UNAVAILABLE")
-    
-    if not document_id:
-        logger.error("Document ID is empty")
-        raise VectorDBError("Empty document ID", "EMPTY_DOCUMENT_ID")
-    
-    try:
-        # 해당 문서의 모든 청크 ID 조회
-        results = collection.get(
-            where={"source_document_id": document_id},
-            include=["documents"]
-        )
-        
-        chunk_ids = results.get("ids", [])
-        if not chunk_ids:
-            logger.warning(f"No chunks found for document: {document_id}")
-            return False
-        
-        # 모든 청크 삭제
-        collection.delete(ids=chunk_ids)
-        
-        logger.info(f"Deleted {len(chunk_ids)} chunks for document: {document_id}")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Error deleting document {document_id} from ChromaDB: {e}")
-        raise VectorDBError(f"Failed to delete document: {e}", "DELETE_ERROR")
+    return delete_multimodal_document(document_id)
 
 def delete_all_documents() -> int:
     """
@@ -232,36 +493,7 @@ def delete_all_documents() -> int:
     Returns:
         int: 삭제된 문서의 개수
     """
-    if not collection:
-        logger.error("ChromaDB collection is not available. Cannot delete documents.")
-        raise VectorDBError("ChromaDB collection not available", "COLLECTION_UNAVAILABLE")
-    
-    try:
-        # 모든 문서 조회
-        results = collection.get(include=["documents"])
-        all_ids = results.get("ids", [])
-        
-        if not all_ids:
-            logger.info("No documents to delete")
-            return 0
-        
-        # 모든 문서 삭제
-        collection.delete(ids=all_ids)
-        
-        # 문서 ID별로 그룹화하여 개수 계산
-        metadatas = results.get("metadatas", [])
-        document_ids = set()
-        for meta in metadatas:
-            if meta and "source_document_id" in meta:
-                document_ids.add(meta["source_document_id"])
-        
-        deleted_count = len(document_ids)
-        logger.info(f"Deleted all documents from ChromaDB. Total documents: {deleted_count}, Total chunks: {len(all_ids)}")
-        return deleted_count
-        
-    except Exception as e:
-        logger.error(f"Error deleting all documents from ChromaDB: {e}")
-        raise VectorDBError(f"Failed to delete all documents: {e}", "DELETE_ALL_ERROR")
+    return delete_all_multimodal_documents()
 
 def get_document_info(document_id: str) -> dict:
     """
@@ -273,29 +505,139 @@ def get_document_info(document_id: str) -> dict:
     Returns:
         dict: 문서 정보 (chunk_count, first_chunk_preview 등)
     """
-    if not collection:
-        logger.error("ChromaDB collection is not available")
-        raise VectorDBError("ChromaDB collection not available", "COLLECTION_UNAVAILABLE")
+    return get_multimodal_document_info(document_id)
+
+
+# Additional utility functions for multimodal content
+def delete_multimodal_document(document_id: str) -> bool:
+    """
+    Deletes all content (text, images, tables) for a specific document.
+    """
+    deleted = False
     
     try:
-        results = collection.get(
-            where={"source_document_id": document_id},
-            include=["metadatas"]
-        )
+        # Delete from text collection
+        if text_collection:
+            text_results = text_collection.get(where={"$and": [{"source_document_id": document_id}, {"content_type": "text"}]})
+            if text_results['ids']:
+                text_collection.delete(ids=text_results['ids'])
+                logger.info(f"Deleted {len(text_results['ids'])} text chunks for document {document_id}")
+                deleted = True
         
-        metadatas = results.get("metadatas", [])
-        if not metadatas:
-            return None
+        # Delete from images collection
+        if images_collection:
+            image_results = images_collection.get(where={"$and": [{"source_document_id": document_id}, {"content_type": "image"}]})
+            if image_results['ids']:
+                images_collection.delete(ids=image_results['ids'])
+                logger.info(f"Deleted {len(image_results['ids'])} images for document {document_id}")
+                deleted = True
         
-        return {
-            "document_id": document_id,
-            "chunk_count": len(metadatas),
-            "first_chunk_preview": metadatas[0].get("original_text_preview", "") if metadatas else ""
+        # Delete from tables collection
+        if tables_collection:
+            table_results = tables_collection.get(where={"$and": [{"source_document_id": document_id}, {"content_type": "table"}]})
+            if table_results['ids']:
+                tables_collection.delete(ids=table_results['ids'])
+                logger.info(f"Deleted {len(table_results['ids'])} tables for document {document_id}")
+                deleted = True
+                
+    except Exception as e:
+        logger.error(f"Error deleting multimodal document {document_id}: {e}")
+        raise VectorDBError(f"Failed to delete document: {e}", "DELETE_ERROR")
+    
+    return deleted
+
+def delete_all_multimodal_documents() -> int:
+    """
+    Deletes all content (text, images, tables) from all multimodal collections.
+    
+    Returns:
+        int: Number of unique documents deleted
+    """
+    deleted_documents = set()
+    
+    try:
+        # Delete from text collection
+        if text_collection:
+            text_results = text_collection.get(include=["metadatas"])
+            if text_results['ids']:
+                text_collection.delete(ids=text_results['ids'])
+                # Extract unique document IDs
+                metadatas = text_results.get("metadatas", [])
+                if metadatas:
+                    for meta in metadatas:
+                        if meta and "source_document_id" in meta:
+                            deleted_documents.add(meta["source_document_id"])
+                logger.info(f"Deleted {len(text_results['ids'])} text chunks from multimodal collection")
+        
+        # Delete from images collection  
+        if images_collection:
+            image_results = images_collection.get(include=["metadatas"])
+            if image_results['ids']:
+                images_collection.delete(ids=image_results['ids'])
+                # Extract unique document IDs
+                metadatas = image_results.get("metadatas", [])
+                if metadatas:
+                    for meta in metadatas:
+                        if meta and "source_document_id" in meta:
+                            deleted_documents.add(meta["source_document_id"])
+                logger.info(f"Deleted {len(image_results['ids'])} images from multimodal collection")
+        
+        # Delete from tables collection
+        if tables_collection:
+            table_results = tables_collection.get(include=["metadatas"])
+            if table_results['ids']:
+                tables_collection.delete(ids=table_results['ids'])
+                # Extract unique document IDs
+                metadatas = table_results.get("metadatas", [])
+                if metadatas:
+                    for meta in metadatas:
+                        if meta and "source_document_id" in meta:
+                            deleted_documents.add(meta["source_document_id"])
+                logger.info(f"Deleted {len(table_results['ids'])} tables from multimodal collection")
+        
+        deleted_count = len(deleted_documents)
+        logger.info(f"Deleted all multimodal content. Total unique documents: {deleted_count}")
+        return deleted_count
+        
+    except Exception as e:
+        logger.error(f"Error deleting all multimodal documents: {e}")
+        raise VectorDBError(f"Failed to delete all multimodal documents: {e}", "DELETE_ALL_ERROR")
+
+def get_multimodal_document_info(document_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Gets information about all content types for a specific document.
+    """
+    try:
+        info = {
+            'document_id': document_id,
+            'text_chunks': 0,
+            'images': 0,
+            'tables': 0,
+            'first_chunk_preview': None
         }
+        
+        # Get text info
+        if text_collection:
+            text_results = text_collection.get(where={"$and": [{"source_document_id": document_id}, {"content_type": "text"}]})
+            info['text_chunks'] = len(text_results['ids'])
+            if text_results['documents']:
+                info['first_chunk_preview'] = text_results['documents'][0][:200]
+        
+        # Get images info
+        if images_collection:
+            image_results = images_collection.get(where={"$and": [{"source_document_id": document_id}, {"content_type": "image"}]})
+            info['images'] = len(image_results['ids'])
+        
+        # Get tables info
+        if tables_collection:
+            table_results = tables_collection.get(where={"$and": [{"source_document_id": document_id}, {"content_type": "table"}]})
+            info['tables'] = len(table_results['ids'])
+        
+        return info if any([info['text_chunks'], info['images'], info['tables']]) else None
         
     except Exception as e:
         logger.error(f"Error getting document info for {document_id}: {e}")
-        raise VectorDBError(f"Failed to get document info: {e}", "GET_INFO_ERROR")
+        return None
 
 if __name__ == '__main__':
     # 간단한 테스트용
@@ -326,12 +668,12 @@ if __name__ == '__main__':
              print("Dummy vectors are not correctly generated. Skipping store/search test.")
         else:
             print(f"\nStoring {len(test_chunks)} test vectors for document '{test_doc_id}'...")
-            store_vectors(test_doc_id, test_chunks, test_vectors)
+            store_text_vectors(test_doc_id, test_chunks, test_vectors)
 
             print("\nSearching for vectors similar to the first chunk's vector...")
             # 첫 번째 청크의 벡터로 검색 (자기 자신도 결과에 포함될 수 있음)
             query_vec = test_vectors[0]
-            similar_results = search_similar_vectors(query_vec, top_k=2)
+            similar_results = search_text_vectors(query_vec, top_k=2)
 
             if similar_results:
                 print("Search results:")
@@ -343,13 +685,62 @@ if __name__ == '__main__':
             print("\nSearching with a specific metadata filter (if applicable)...")
             # 예시: 특정 문서 ID로 필터링하여 검색
             # 이 테스트에서는 test_doc_id만 있으므로, 필터링 결과는 위와 유사할 것임
-            filtered_results = search_similar_vectors(query_vec, top_k=2, filter_metadata={'source_document_id': test_doc_id})
+            filtered_results = search_text_vectors(query_vec, top_k=2, filter_metadata={'source_document_id': test_doc_id})
             if filtered_results:
                 print("Filtered search results:")
                 for res in filtered_results:
                      print(f"  ID: {res['id']}, Distance: {res['distance']:.4f}, Text: {res['text'][:50]}...")
             else:
                 print("No results found with the specified filter.")
+
+        # Test multimodal storage and search
+        print("\n--- Testing Multimodal Storage and Search ---")
+        multimodal_test_doc_id = "multimodal_test_doc.pdf"
+        multimodal_content_data = {
+            "text_chunks": [
+                "멀티모달 테스트 문서의 첫 번째 텍스트 청크입니다.",
+                "이것은 두 번째 텍스트 청크이며, 이미지와 표도 포함됩니다."
+            ],
+            "images": [
+                {"filename": "image1.png", "path": "/tmp/image1.png", "page": 1, "description": "A sample image of a graph.", "metadata": {"source_document_id": multimodal_test_doc_id, "page": 1}}
+            ],
+            "tables": [
+                {"raw_text": "Header1\tHeader2\nData1\tData2", "parsed_data": [["Header1", "Header2"], ["Data1", "Data2"]], "page": 2, "metadata": {"source_document_id": multimodal_test_doc_id, "page": 2}}
+            ]
+        }
+        multimodal_text_vectors = [[0.1]*dummy_embedding_dim, [0.2]*dummy_embedding_dim]
+
+        print(f"\nStoring multimodal content for document '{multimodal_test_doc_id}'...")
+        store_multimodal_content(multimodal_test_doc_id, multimodal_content_data, multimodal_text_vectors)
+
+        print("\nSearching multimodal content...")
+        query_for_multimodal = [0.15]*dummy_embedding_dim # Query vector for multimodal search
+        multimodal_search_results = search_multimodal_content(query_for_multimodal, top_k=1, doc_ids=[multimodal_test_doc_id])
+
+        print("Multimodal Search Results:")
+        print(f"  Text results: {len(multimodal_search_results['text'])}")
+        for res in multimodal_search_results['text']:
+            print(f"    Text ID: {res['id']}, Text: {res['text'][:50]}...")
+        print(f"  Image results: {len(multimodal_search_results['images'])}")
+        for res in multimodal_search_results['images']:
+            print(f"    Image ID: {res['id']}, Description: {res['description'][:50]}...")
+        print(f"  Table results: {len(multimodal_search_results['tables'])}")
+        for res in multimodal_search_results['tables']:
+            print(f"    Table ID: {res['id']}, Content: {res['content'][:50]}...")
+
+        print("\nGetting multimodal document info...")
+        info = get_multimodal_document_info(multimodal_test_doc_id)
+        print(f"Multimodal document info: {info}")
+
+        print("\nDeleting multimodal document...")
+        delete_multimodal_document(multimodal_test_doc_id)
+        info_after_delete = get_multimodal_document_info(multimodal_test_doc_id)
+        print(f"Multimodal document info after delete: {info_after_delete}")
+
+        print("\nDeleting all documents...")
+        deleted_count = delete_all_documents()
+        print(f"Total documents deleted: {deleted_count}")
+
     else:
         print("\nSkipping ChromaDB operations test as client or collection failed to initialize.")
 

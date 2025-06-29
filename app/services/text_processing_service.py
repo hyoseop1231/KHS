@@ -3,10 +3,12 @@ from sentence_transformers import SentenceTransformer
 import numpy as np
 import threading
 import re
-from typing import List
+from typing import List, Dict, Any
 from app.config import settings
 from app.utils.logging_config import get_logger
-from app.utils.exceptions import EmbeddingError
+from app.utils.exceptions import EmbeddingError, TextProcessingError
+
+from app.services.vector_db_service import store_text_vectors, store_multimodal_content
 
 logger = get_logger(__name__)
 
@@ -25,6 +27,7 @@ class EmbeddingModelManager:
     
     def get_model(self):
         if self._model is None:
+            # Ensure only one thread loads the model
             with self._lock:
                 if self._model is None:
                     try:
@@ -39,46 +42,16 @@ class EmbeddingModelManager:
 # Global model manager instance
 model_manager = EmbeddingModelManager()
 
-# 주조(주물) 분야 용어 교정 사전 (예시)
-FOUNDRY_TERM_MAP = {
-    '주물': '주조', '몰드': '주형', '코어': '심', '캐비티': '형공', '패턴': '주형모형', '인게이트': '주입구',
-    '슬래그': '슬래그(불순물)', '샌드': '주형사', '포어': '기공', '블로홀': '기공', '쉘': '쉘(껍질)',
-    '필터': '여과기', '플라스크': '플라스크(주형틀)', '스프루': '주입구', '러너': '주입로', '라이저': '승강구',
-    '포어시티': '기공성', '쇼트': '주조불량', '핀홀': '기공', '버': '이물질', '플래시': '이물질',
-    '게이트': '주입구', '매니폴드': '분배기', '노즐': '노즐(분사구)', '디플렉터': '방향전환기', '슬리브': '슬리브(보호관)',
-    '플러그': '플러그(마개)', '인서트': '인서트(삽입물)', '인베스트먼트': '정밀주조', '다이': '금형',
-    '다이캐스팅': '다이캐스팅(압출주조)', '샌드몰드': '주형사주형', '샌드캐스팅': '주형사주조', '로스트왁스': '정밀주조',
-    '왁스패턴': '왁스모형', '그린샌드': '습식주형사', '드라이샌드': '건식주형사', '클레이': '점토',
-    '실리카': '규사', '매그네시아': '마그네시아', '크로마이트': '크로마이트(광물)', '지르코니아': '지르코니아(광물)',
-    '페놀': '페놀(수지)', '레진': '레진(수지)', '바인더': '결합제', '하드너': '경화제', '카본': '탄소',
-    '그래파이트': '흑연', '페라이트': '페라이트(철)', '오스테나이트': '오스테나이트(철)', '마르텐사이트': '마르텐사이트(철)',
-    '펄라이트': '펄라이트(철)', '시멘타이트': '시멘타이트(철)', '주철': '주철(철)', '강': '강(철)',
-    '스테인리스': '스테인리스(철)', '알루미늄': '알루미늄(금속)', '구리': '구리(금속)', '아연': '아연(금속)',
-    '마그네슘': '마그네슘(금속)', '티타늄': '티타늄(금속)', '니켈': '니켈(금속)', '크롬': '크롬(금속)',
-    '몰리브덴': '몰리브덴(금속)', '텅스텐': '텅스텐(금속)', '코발트': '코발트(금속)', '실리콘': '실리콘(원소)',
-    '망간': '망간(원소)', '인': '인(원소)', '황': '황(원소)', '납': '납(금속)', '주강': '주강(철)',
-    '주석': '주석(금속)', '브론즈': '청동', '황동': '황동(합금)', '주물강': '주강(철)', '주물주철': '주철(철)',
-    '주물알루미늄': '알루미늄(금속)', '주물구리': '구리(금속)', '주물아연': '아연(금속)', '주물마그네슘': '마그네슘(금속)',
-    '주물티타늄': '티타늄(금속)', '주물니켈': '니켈(금속)', '주물크롬': '크롬(금속)', '주물코발트': '코발트(금속)',
-    '주물실리콘': '실리콘(원소)', '주물망간': '망간(원소)', '주물인': '인(원소)', '주물황': '황(원소)',
-    '주물납': '납(금속)', '주물주강': '주강(철)', '주물주석': '주석(금속)', '주물브론즈': '청동', '주물황동': '황동(합금)'
-}
 
-def correct_foundry_terms(text: str) -> str:
-    """
-    주조(주물) 분야 용어를 표준 용어로 교정합니다.
-    """
-    import re
-    def replace(match):
-        word = match.group(0)
-        return FOUNDRY_TERM_MAP.get(word, word)
-    # 단어 단위로만 치환 (한글, 영문, 숫자 포함)
-    pattern = re.compile(r'|'.join(map(re.escape, sorted(FOUNDRY_TERM_MAP, key=len, reverse=True))))
-    return pattern.sub(replace, text)
-
-def split_text_into_chunks(text: str, chunk_size: int = None, chunk_overlap: int = None) -> List[str]:
+def split_text_into_chunks(text: str, chunk_size: int = None, chunk_overlap: int = None, apply_correction: bool = False) -> List[str]:
     """
     Splits a long text into smaller, overlapping chunks using Langchain's RecursiveCharacterTextSplitter.
+    
+    Args:
+        text: The input text to be split
+        chunk_size: Maximum size of each chunk (default from settings)
+        chunk_overlap: Overlap between chunks (default from settings)
+        apply_correction: Whether to apply OCR correction to chunks
     """
     if not text:
         return []
@@ -95,13 +68,48 @@ def split_text_into_chunks(text: str, chunk_size: int = None, chunk_overlap: int
             separators=["\n\n", "\n", " ", ""]
         )
         chunks = text_splitter.split_text(text)
+        
+        # Apply OCR correction if requested
+        if apply_correction:
+            try:
+                from app.services.ocr_correction_service import correct_text_chunks
+                chunks = correct_text_chunks(chunks, use_llm=True)
+                logger.info(f"Applied OCR correction to {len(chunks)} chunks")
+            except Exception as e:
+                logger.warning(f"OCR correction failed for chunks: {e}")
+        
         logger.info(f"Split text into {len(chunks)} chunks (size: {chunk_size}, overlap: {chunk_overlap})")
         return chunks
     except Exception as e:
         logger.error(f"Error splitting text: {e}")
         raise EmbeddingError(f"Text splitting failed: {e}", "TEXT_SPLIT_ERROR")
 
-def get_embeddings(text_chunks: List[str], batch_size: int = 32) -> List[List[float]]:
+def get_optimal_batch_size(num_chunks: int, available_memory_gb: float = 4.0) -> int:
+    """
+    GPU/CPU 메모리와 청크 수에 따른 최적 배치 크기 계산
+    """
+    # 기본 배치 크기
+    base_batch_size = 32
+    
+    # 메모리에 따른 배치 크기 조정
+    if available_memory_gb >= 8:
+        max_batch_size = 128
+    elif available_memory_gb >= 4:
+        max_batch_size = 64
+    else:
+        max_batch_size = 32
+    
+    # 청크 수에 따른 배치 크기 조정
+    if num_chunks < 50:
+        optimal_batch_size = min(16, max_batch_size)
+    elif num_chunks < 200:
+        optimal_batch_size = min(32, max_batch_size)
+    else:
+        optimal_batch_size = max_batch_size
+    
+    return optimal_batch_size
+
+def get_embeddings(text_chunks: List[str], batch_size: int = None) -> List[List[float]]:
     """
     Converts text chunks into vector embeddings with optimized batch processing.
     Returns a list of embeddings, where each embedding is a list of floats.
@@ -111,25 +119,83 @@ def get_embeddings(text_chunks: List[str], batch_size: int = 32) -> List[List[fl
     
     try:
         model = model_manager.get_model()
-        logger.info(f"Generating embeddings for {len(text_chunks)} chunks using '{settings.EMBEDDING_MODEL}'")
+        
+        # 최적 배치 크기 결정
+        if batch_size is None:
+            batch_size = get_optimal_batch_size(len(text_chunks))
+        
+        logger.info(f"Generating embeddings for {len(text_chunks)} chunks using '{settings.EMBEDDING_MODEL}' (batch_size: {batch_size})")
+        
+        # 빈 청크 제거 및 검증
+        non_empty_chunks = []
+        for i, chunk in enumerate(text_chunks):
+            if chunk and chunk.strip() and len(chunk.strip()) > 5:  # 최소 5자 이상
+                non_empty_chunks.append(chunk.strip())
+            else:
+                logger.debug(f"Skipped empty/short chunk at index {i}")
+        
+        if len(non_empty_chunks) != len(text_chunks):
+            logger.info(f"Filtered out {len(text_chunks) - len(non_empty_chunks)} empty/short chunks")
+        
+        if not non_empty_chunks:
+            logger.warning("No valid chunks found for embedding generation")
+            return []
         
         # Process in batches for better memory management
         all_embeddings = []
-        for i in range(0, len(text_chunks), batch_size):
-            batch = text_chunks[i:i + batch_size]
-            logger.debug(f"Processing batch {i//batch_size + 1}/{(len(text_chunks) + batch_size - 1)//batch_size}")
+        total_batches = (len(non_empty_chunks) + batch_size - 1) // batch_size
+        
+        for i in range(0, len(non_empty_chunks), batch_size):
+            batch = non_empty_chunks[i:i + batch_size]
+            current_batch_num = i // batch_size + 1
             
-            # Generate embeddings for this batch
-            batch_embeddings = model.encode(
-                batch, 
-                convert_to_tensor=False,
-                show_progress_bar=False,
-                batch_size=min(batch_size, len(batch))
-            )
+            logger.debug(f"Processing batch {current_batch_num}/{total_batches} ({len(batch)} chunks)")
             
-            # Convert to list format
-            batch_embeddings_list = [embedding.tolist() for embedding in batch_embeddings]
-            all_embeddings.extend(batch_embeddings_list)
+            try:
+                # Generate embeddings for this batch with optimized settings
+                batch_embeddings = model.encode(
+                    batch, 
+                    convert_to_tensor=False,
+                    show_progress_bar=False,
+                    batch_size=min(len(batch), 32),  # 메모리 제한을 위해 최대 32개씩
+                    normalize_embeddings=True  # 정규화로 성능 향상
+                )
+                
+                # Convert to list format
+                if len(batch_embeddings.shape) == 1:
+                    # 단일 임베딩인 경우
+                    batch_embeddings_list = [batch_embeddings.tolist()]
+                else:
+                    # 여러 임베딩인 경우
+                    batch_embeddings_list = [embedding.tolist() for embedding in batch_embeddings]
+                
+                all_embeddings.extend(batch_embeddings_list)
+                
+            except Exception as batch_error:
+                logger.error(f"Error processing batch {current_batch_num}: {batch_error}")
+                # 실패한 배치에 대해 더미 임베딩 생성
+                model_dim = getattr(model, 'get_sentence_embedding_dimension', lambda: 384)()
+                dummy_embeddings = [[0.0] * model_dim for _ in batch]
+                all_embeddings.extend(dummy_embeddings)
+                logger.warning(f"Used dummy embeddings for failed batch {current_batch_num}")
+            
+            # 메모리 정리
+            import gc
+            gc.collect()
+        
+        # 빈 청크에 대한 더미 임베딩 추가 (원래 순서 유지)
+        if len(non_empty_chunks) != len(text_chunks):
+            final_embeddings = []
+            embedding_idx = 0
+            for chunk in text_chunks:
+                if chunk.strip():
+                    final_embeddings.append(all_embeddings[embedding_idx])
+                    embedding_idx += 1
+                else:
+                    # 빈 청크에 대한 제로 벡터
+                    model_dim = len(all_embeddings[0]) if all_embeddings else 384
+                    final_embeddings.append([0.0] * model_dim)
+            all_embeddings = final_embeddings
         
         logger.info(f"Successfully generated {len(all_embeddings)} embeddings")
         return all_embeddings
@@ -138,38 +204,134 @@ def get_embeddings(text_chunks: List[str], batch_size: int = 32) -> List[List[fl
         logger.error(f"Error during embedding generation: {e}")
         raise EmbeddingError(f"Embedding generation failed: {e}", "EMBEDDING_GENERATION_ERROR")
 
+def process_text_only_pdf_and_store(pdf_path: str, document_id: str, filename: str) -> Dict[str, Any]:
+    """
+    Extracts text from PDF, chunks it, generates embeddings, and stores them in the vector DB.
+    This function is for text-only processing.
+    """
+    logger.info(f"Processing text-only PDF: {pdf_path} (Document ID: {document_id})")
+    try:
+        # Use extract_multimodal_content_from_pdf but only take text
+        extracted_content = extract_multimodal_content_from_pdf(pdf_path, document_id)
+        extracted_text = extracted_content.get("text", "")
+        
+        if not extracted_text.strip():
+            logger.warning(f"No text extracted from {pdf_path}. Skipping vector storage.")
+            return {"status": "skipped", "reason": "no text extracted"}
+
+        text_chunks = split_text_into_chunks(extracted_text)
+        embeddings = get_embeddings(text_chunks)
+        
+        # Prepare metadata for each chunk
+        metadatas = [
+            {"source_document_id": document_id, "filename": filename, "chunk_index": i, "content_type": "text"}
+            for i in range(len(text_chunks))
+        ]
+        
+        store_text_vectors(document_id, text_chunks, embeddings, metadatas)
+        logger.info(f"Successfully processed and stored {len(text_chunks)} text chunks for {pdf_path}")
+        return {"status": "success", "chunks_stored": len(text_chunks)}
+    except Exception as e:
+        logger.error(f"Error processing text-only PDF {pdf_path}: {e}")
+        raise TextProcessingError(f"Failed to process text-only PDF: {e}", "PDF_PROCESSING_FAILED")
+
+def process_multimodal_pdf_and_store(pdf_path: str, document_id: str, filename: str, progress_callback: callable = None) -> Dict[str, Any]:
+    """
+    Extracts multimodal content from PDF, processes it, generates embeddings for text,
+    and stores all content in the multimodal vector DB.
+    """
+    logger.info(f"Processing multimodal PDF: {pdf_path} (Document ID: {document_id})")
+    try:
+        # OCR 완료 후 시작 (55% 지점부터)
+        if progress_callback:
+            progress_callback(document_id, 55, "chunking", "텍스트 청크 분할 시작...")
+        
+        multimodal_content = extract_multimodal_content_from_pdf(pdf_path, document_id)
+        
+        extracted_text = multimodal_content.get("text", "")
+        extracted_images = multimodal_content.get("images", [])
+        extracted_tables = multimodal_content.get("tables", [])
+        
+        text_chunks = []
+        text_embeddings = []
+        text_metadatas = []
+        
+        if extracted_text.strip():
+            # 청크 분할 (60%)
+            if progress_callback:
+                progress_callback(document_id, 60, "chunking", "텍스트 청크 분할 중...")
+            text_chunks = split_text_into_chunks(extracted_text)
+            
+            # 임베딩 생성 (70%)
+            if progress_callback:
+                progress_callback(document_id, 70, "embedding", f"{len(text_chunks)}개 청크 임베딩 생성 중...")
+            text_embeddings = get_embeddings(text_chunks)
+            
+            # 메타데이터 준비 (80%)
+            if progress_callback:
+                progress_callback(document_id, 80, "metadata", "메타데이터 준비 중...")
+            text_metadatas = [
+                {"source_document_id": document_id, "filename": filename, "chunk_index": i, "content_type": "text"}
+                for i in range(len(text_chunks))
+            ]
+            logger.info(f"Prepared {len(text_chunks)} text chunks for {pdf_path}")
+        else:
+            logger.warning(f"No text extracted from {pdf_path}.")
+            if progress_callback:
+                progress_callback(document_id, 80, "warning", "추출된 텍스트가 없습니다.")
+
+        # 데이터베이스 저장 (90%)
+        if progress_callback:
+            progress_callback(document_id, 90, "storing", "벡터 데이터베이스에 저장 중...")
+        
+        store_multimodal_content(
+            document_id=document_id,
+            content_data={
+                "text_chunks": text_chunks,
+                "images": extracted_images,
+                "tables": extracted_tables
+            },
+            text_vectors=text_embeddings,
+            text_metadatas=text_metadatas
+        )
+        
+        # 완료 (100%)
+        if progress_callback:
+            progress_callback(document_id, 100, "completed", f"처리 완료! 텍스트: {len(text_chunks)}청크, 이미지: {len(extracted_images)}개, 표: {len(extracted_tables)}개")
+        
+        logger.info(f"Successfully processed and stored multimodal content for {pdf_path}")
+        return {
+            "status": "success",
+            "text_chunks_stored": len(text_chunks),
+            "images_stored": len(extracted_images),
+            "tables_stored": len(extracted_tables)
+        }
+    except Exception as e:
+        logger.error(f"Error processing multimodal PDF {pdf_path}: {e}")
+        raise TextProcessingError(f"Failed to process multimodal PDF: {e}", "MULTIMODAL_PROCESSING_FAILED")
+
 if __name__ == '__main__':
     # 간단한 테스트용
-    print(f"Text processing service module loaded. Embedding model: '{MODEL_NAME if embedding_model else 'Failed to load'}'")
+    print("Text processing service module loaded.")
+    print(f"Using embedding model: {settings.EMBEDDING_MODEL}")
+    print(f"Chunk size: {settings.CHUNK_SIZE}, Chunk overlap: {settings.CHUNK_OVERLAP}")
 
-    sample_text = """이것은 긴 샘플 텍스트입니다. 문장 분할과 청크 생성을 테스트하기 위한 것입니다.
-여러 문단으로 구성될 수 있으며, 각 문단은 여러 문장을 포함할 수 있습니다.
-Langchain의 RecursiveCharacterTextSplitter는 이러한 텍스트를 효과적으로 나눌 수 있어야 합니다.
-한글 텍스트에 대해서도 잘 동작하는지 확인이 필요합니다.
-
-두 번째 문단입니다. 이 문단도 여러 문장으로 이루어져 있습니다.
-임베딩 모델은 각 청크를 숫자 벡터로 변환하여 의미적 유사성을 계산할 수 있도록 합니다.
-이것이 RAG 시스템의 핵심 요소 중 하나입니다.
-Sentence Transformers 라이브러리는 다양한 사전 훈련된 모델을 제공합니다.
-"""
-    print("\n--- Testing Text Splitting ---")
-    chunks = split_text_into_chunks(sample_text, chunk_size=100, chunk_overlap=20)
-    if chunks:
-        for i, chunk in enumerate(chunks):
-            print(f"Chunk {i+1}: {chunk} (Length: {len(chunk)})")
-    else:
-        print("No chunks generated.")
-
-    if embedding_model and chunks:
-        print("\n--- Testing Embedding Generation ---")
-        embeddings = get_embeddings(chunks)
-        if embeddings and all(e for e in embeddings): # 모든 임베딩이 비어있지 않은지 확인
-            print(f"Generated {len(embeddings)} embeddings.")
-            print(f"Dimension of the first embedding: {len(embeddings[0]) if embeddings[0] else 'N/A'}")
-            # print(f"First embedding (first 5 values): {embeddings[0][:5] if embeddings[0] else 'N/A'}")
-        else:
-            print("Failed to generate embeddings or some embeddings are empty.")
-    elif not chunks:
-        print("\nSkipping embedding generation test as no chunks were created.")
-    else:
-        print("\nSkipping embedding generation test as embedding model failed to load.")
+    # Example usage (requires a dummy PDF and ChromaDB running)
+    # from app.utils.file_manager import save_upload_file
+    # import uuid
+    # dummy_pdf_path = "path/to/your/dummy.pdf"  # Replace with a real PDF path for testing
+    # if os.path.exists(dummy_pdf_path):
+    #     print(f"\n--- Testing PDF processing with {dummy_pdf_path} ---")
+    #     test_document_id = str(uuid.uuid4())
+    #     try:
+    #         result = process_multimodal_pdf_and_store(dummy_pdf_path, test_document_id, "dummy.pdf")
+    #         print(f"Processing result: {result}")
+    #         # info = get_multimodal_document_info(test_document_id)  # This function is now in vector_db_service
+    #         # print(f"Document info after processing: {info}")
+    #         # Clean up
+    #         # delete_multimodal_document(test_document_id)  # This function is now in vector_db_service
+    #         # print(f"Cleaned up document {test_document_id}")
+    #     except Exception as e:
+    #         print(f"Test failed: {e}")
+    # else:
+    #     print(f"\nSkipping PDF processing test. Please create a dummy PDF at {dummy_pdf_path} to run this test.")

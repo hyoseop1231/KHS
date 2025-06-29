@@ -25,7 +25,7 @@ body {
 h1 {
     color: #2c3e50;
     text-align: center;
-    font-size: 2.5rem;
+    font-size: 1.8rem;
     font-weight: 700;
     margin-bottom: 2rem;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -36,7 +36,7 @@ h1 {
 
 h2 {
     color: #34495e;
-    font-size: 1.5rem;
+    font-size: 1.3rem;
     font-weight: 600;
     margin-bottom: 1rem;
     padding-bottom: 0.5rem;
@@ -455,7 +455,7 @@ button:hover {
     }
     
     h1 {
-        font-size: 2rem;
+        font-size: 1.6rem;
     }
     
     .button-group {
@@ -532,67 +532,298 @@ button:hover {
     100% { transform: rotate(360deg); }
 }
 
-/* Chat progress indicator */
+/* Compact Horizontal Chat progress indicator */
 .chat-progress {
     display: none;
-    padding: 15px;
-    background-color: #f8f9fa;
-    border: 1px solid #e9ecef;
+    padding: 15px 20px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border: 1px solid #dee2e6;
     border-radius: 12px;
     margin: 10px 0;
-    text-align: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s ease;
 }
 
 .chat-progress.active {
     display: block;
-    animation: pulse 2s infinite;
+    animation: slideIn 0.4s ease-out;
 }
 
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.7; }
-    100% { opacity: 1; }
+.chat-progress.completing {
+    animation: fadeOut 0.4s ease-in;
 }
 
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+        transform: scale(1);
+    }
+    to {
+        opacity: 0.9;
+        transform: scale(0.99);
+    }
+}
+
+/* Progress Header */
+.progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.progress-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #495057;
+}
+
+.progress-icon {
+    font-size: 1.2rem;
+    animation: bounce 2s infinite;
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% {
+        transform: translateY(0);
+    }
+    40% {
+        transform: translateY(-2px);
+    }
+    60% {
+        transform: translateY(-1px);
+    }
+}
+
+.progress-details {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.85rem;
+}
+
+.progress-time {
+    color: #6c757d;
+    font-family: 'Courier New', monospace;
+    min-width: 35px;
+}
+
+.progress-percentage {
+    font-weight: 600;
+    color: #667eea;
+    min-width: 35px;
+    text-align: right;
+}
+
+.progress-bar-container {
+    width: 100%;
+    height: 6px;
+    background-color: #e9ecef;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+
+.progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+    position: relative;
+}
+
+.progress-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%);
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(200%); }
+}
+
+/* Streaming message styles */
+.message.streaming {
+    border-left: 3px solid #667eea;
+    background-color: #f8f9ff;
+}
+
+.streaming-content {
+    position: relative;
+}
+
+.message.streaming .streaming-content::after {
+    content: '▋';
+    color: #667eea;
+    animation: blink 1s infinite;
+    margin-left: 2px;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+/* Horizontal progress steps */
 .chat-progress-steps {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 15px;
-    padding: 0 20px;
+    align-items: center;
+    gap: 8px;
 }
 
 .progress-step {
     display: flex;
     flex-direction: column;
     align-items: center;
-    font-size: 0.9rem;
-    color: #6c757d;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    transition: all 0.3s ease;
+}
+
+.progress-step.pending {
+    opacity: 0.4;
 }
 
 .progress-step.active {
-    color: #667eea;
-    font-weight: 600;
+    opacity: 1;
+    transform: scale(1.05);
 }
 
 .progress-step.completed {
-    color: #28a745;
+    opacity: 1;
 }
 
 .progress-step-icon {
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     background-color: #e9ecef;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 5px;
     font-size: 12px;
+    font-weight: bold;
+    color: #6c757d;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
 }
 
 .progress-step.active .progress-step-icon {
-    background-color: #667eea;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
+    animation: pulse 2s infinite;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.progress-step.completed .progress-step-icon {
+    background: linear-gradient(135deg, #28a745 0%, #198754 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+}
+
+.step-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #6c757d;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.progress-step.active .step-title {
+    color: #667eea;
+    font-weight: 700;
+}
+
+.progress-step.completed .step-title {
+    color: #28a745;
+}
+
+.step-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 20px;
+}
+
+.step-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.step-check {
+    width: 16px;
+    height: 16px;
+    background: linear-gradient(135deg, #28a745 0%, #198754 100%);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+.step-connector {
+    flex: 0 0 20px;
+    height: 2px;
+    background: linear-gradient(90deg, #dee2e6 0%, #e9ecef 100%);
+    margin: 0 4px;
+    position: relative;
+    overflow: hidden;
+}
+
+.step-connector::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    transition: left 0.5s ease;
+}
+
+.progress-step.completed + .step-connector::after {
+    left: 0;
+}
+
+.response-length {
+    font-size: 0.7rem;
+    color: #6c757d;
+    background: #e9ecef;
+    padding: 1px 4px;
+    border-radius: 6px;
+    margin-top: 2px;
+    white-space: nowrap;
 }
 
 .progress-step.completed .progress-step-icon {
@@ -613,14 +844,310 @@ button:hover {
     content: "✓";
 }
 
+/* Step percentage display */
+.step-percentage {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #667eea;
+    background: rgba(102, 126, 234, 0.1);
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: 8px;
+    border: 1px solid rgba(102, 126, 234, 0.3);
+    animation: pulse 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes pulse {
+    0% { background: rgba(102, 126, 234, 0.1); }
+    100% { background: rgba(102, 126, 234, 0.2); }
+}
+
+/* Enhanced progress message */
+.progress-message {
+    font-size: 0.9rem;
+    color: #495057;
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: rgba(102, 126, 234, 0.05);
+    border-radius: 6px;
+    border-left: 3px solid #667eea;
+    animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 /* Multimodal message styling */
 .multimodal-message {
     border-left: 4px solid #667eea;
     padding-left: 16px;
+    position: relative;
+}
+
+/* Cached message styling */
+.cached-message {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+    border-left: 4px solid #28a745;
+}
+
+.cache-indicator {
+    position: absolute;
+    top: -8px;
+    right: 8px;
+    background: #28a745;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    z-index: 10;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Enhanced formatting for cached responses */
+.cached-message .response-text {
+    font-family: inherit !important;
+    font-size: 1rem !important;
+    line-height: 1.6 !important;
+    color: #495057 !important;
+}
+
+.cached-message .response-text * {
+    font-family: inherit !important;
+    color: inherit !important;
+}
+
+.cached-message .response-text h1 {
+    font-size: 1.4rem !important;
+    color: #2c3e50 !important;
+    margin-top: 1.5rem !important;
+    margin-bottom: 0.8rem !important;
+    font-weight: 700 !important;
+    line-height: 1.2 !important;
+}
+
+.cached-message .response-text h2 {
+    font-size: 1.25rem !important;
+    color: #2c3e50 !important;
+    margin-top: 1.3rem !important;
+    margin-bottom: 0.7rem !important;
+    font-weight: 600 !important;
+    line-height: 1.3 !important;
+}
+
+.cached-message .response-text h3 {
+    font-size: 1.1rem !important;
+    color: #2c3e50 !important;
+    margin-top: 1.2rem !important;
+    margin-bottom: 0.6rem !important;
+    font-weight: 600 !important;
+    line-height: 1.3 !important;
+}
+
+.cached-message .response-text p {
+    font-size: 1rem !important;
+    line-height: 1.6 !important;
+    margin-bottom: 1rem !important;
+    color: #495057 !important;
+}
+
+.cached-message .response-text ul,
+.cached-message .response-text ol {
+    font-size: 1rem !important;
+    line-height: 1.6 !important;
+    margin: 1rem 0 !important;
+    padding-left: 2rem !important;
+}
+
+.cached-message .response-text li {
+    font-size: 1rem !important;
+    line-height: 1.6 !important;
+    margin-bottom: 0.5rem !important;
+    color: #495057 !important;
+}
+
+.cached-message .response-text strong,
+.cached-message .response-text b {
+    font-weight: 600 !important;
+    color: #2c3e50 !important;
+}
+
+.cached-message .response-text table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    margin: 1.5rem 0 !important;
+    border: 1px solid #dee2e6 !important;
+    font-size: 0.95rem !important;
+}
+
+.cached-message .response-text th,
+.cached-message .response-text td {
+    border: 1px solid #dee2e6 !important;
+    padding: 12px !important;
+    text-align: left !important;
+    font-size: 0.95rem !important;
+    line-height: 1.4 !important;
+}
+
+.cached-message .response-text th {
+    background-color: #f8f9fa !important;
+    font-weight: 600 !important;
+    color: #495057 !important;
+}
+
+.cached-message .response-text pre {
+    background-color: #f8f9fa !important;
+    padding: 1rem !important;
+    border-radius: 6px !important;
+    overflow-x: auto !important;
+    border-left: 4px solid #007bff !important;
+    margin: 1.5rem 0 !important;
+    font-size: 0.9rem !important;
+    line-height: 1.4 !important;
+}
+
+.cached-message .response-text code {
+    background-color: #f8f9fa !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+    font-family: 'Courier New', monospace !important;
+    font-size: 0.9rem !important;
+    color: #e83e8c !important;
+}
+
+.cached-message .response-text blockquote {
+    border-left: 4px solid #667eea !important;
+    padding-left: 1rem !important;
+    margin: 1.5rem 0 !important;
+    color: #6c757d !important;
+    font-style: italic !important;
+    background-color: #f8f9fa !important;
+    padding: 1rem !important;
+    border-radius: 0 6px 6px 0 !important;
+}
+
+/* Content summary styling */
+.content-summary {
+    margin-top: 12px;
+    padding: 12px;
+    background: rgba(102, 126, 234, 0.08);
+    border-radius: 8px;
+    border: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+.summary-title {
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+}
+
+.summary-items {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.summary-item {
+    font-size: 0.85rem;
+    color: #6c757d;
+    background: rgba(255, 255, 255, 0.7);
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+/* Referenced media styling */
+.referenced-media {
+    margin-top: 12px;
+}
+
+.referenced-media h4 {
+    margin: 0 0 8px 0;
+    font-size: 0.9rem;
+    color: #495057;
+    font-weight: 600;
+}
+
+.media-item {
+    margin-bottom: 12px;
+}
+
+.media-caption {
+    margin-top: 4px;
+    font-size: 0.8rem;
+    color: #6c757d;
+    text-align: center;
+    background: rgba(108, 117, 125, 0.1);
+    padding: 4px 8px;
+    border-radius: 4px;
 }
 
 .response-text {
     margin-bottom: 15px;
+}
+
+/* General response text formatting (non-cached) */
+.response-text h1 {
+    font-size: 1.4rem !important;
+    color: #2c3e50 !important;
+    margin-top: 1.5rem !important;
+    margin-bottom: 0.8rem !important;
+    font-weight: 700 !important;
+    line-height: 1.2 !important;
+}
+
+.response-text h2 {
+    font-size: 1.25rem !important;
+    color: #2c3e50 !important;
+    margin-top: 1.3rem !important;
+    margin-bottom: 0.7rem !important;
+    font-weight: 600 !important;
+    line-height: 1.3 !important;
+}
+
+.response-text h3 {
+    font-size: 1.1rem !important;
+    color: #2c3e50 !important;
+    margin-top: 1.2rem !important;
+    margin-bottom: 0.6rem !important;
+    font-weight: 600 !important;
+    line-height: 1.3 !important;
+}
+
+.response-text h4 {
+    font-size: 1.05rem !important;
+    color: #2c3e50 !important;
+    margin-top: 1rem !important;
+    margin-bottom: 0.5rem !important;
+    font-weight: 600 !important;
+    line-height: 1.3 !important;
+}
+
+.response-text h5 {
+    font-size: 1rem !important;
+    color: #2c3e50 !important;
+    margin-top: 0.8rem !important;
+    margin-bottom: 0.4rem !important;
+    font-weight: 600 !important;
+    line-height: 1.3 !important;
+}
+
+.response-text h6 {
+    font-size: 0.95rem !important;
+    color: #2c3e50 !important;
+    margin-top: 0.8rem !important;
+    margin-bottom: 0.4rem !important;
+    font-weight: 600 !important;
+    line-height: 1.3 !important;
 }
 
 .media-content {
@@ -997,6 +1524,44 @@ button:hover {
     color: #495057;
 }
 
+.current-step-display.compact {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: rgba(248, 249, 250, 0.8);
+    border-radius: 8px;
+    border-left: 3px solid #667eea;
+}
+
+.step-text-compact {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.step-text-compact .main-text {
+    flex: 1;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #495057;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.step-text-compact .elapsed-time {
+    font-size: 0.8rem;
+    color: #6c757d;
+    font-weight: 400;
+    background: rgba(108, 117, 125, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
 .current-step-display.processing {
     color: #667eea;
 }
@@ -1168,4 +1733,64 @@ button:hover {
     border-radius: 4px;
     display: inline-block;
     margin-top: 2px;
+}
+
+
+/* 문서 선택 영역 스타일 */
+#individual-doc-checkboxes {
+    scrollbar-width: thin;
+    scrollbar-color: #dee2e6 transparent;
+}
+
+#individual-doc-checkboxes::-webkit-scrollbar {
+    width: 6px;
+}
+
+#individual-doc-checkboxes::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#individual-doc-checkboxes::-webkit-scrollbar-thumb {
+    background-color: #dee2e6;
+    border-radius: 3px;
+}
+
+#individual-doc-checkboxes::-webkit-scrollbar-thumb:hover {
+    background-color: #adb5bd;
+}
+
+/* 문서 체크박스 개별 아이템 스타일 */
+.doc-checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    margin-bottom: 4px;
+    border-radius: 6px;
+    transition: background-color 0.2s ease;
+    cursor: pointer;
+}
+
+.doc-checkbox-item:hover {
+    background-color: #f8f9fa;
+}
+
+.doc-checkbox-item input[type="checkbox"] {
+    margin: 0;
+    transform: scale(1.05);
+}
+
+.doc-checkbox-item .doc-name {
+    flex: 1;
+    font-size: 0.9em;
+    color: #495057;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.doc-checkbox-item .doc-stats {
+    font-size: 0.75em;
+    color: #6c757d;
+    white-space: nowrap;
 }
